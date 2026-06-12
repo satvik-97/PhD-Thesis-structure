@@ -1,0 +1,126 @@
+% ============================================================
+% preamble.tex — packages, geometry, and custom commands
+% ============================================================
+
+% ---- ENCODING & FONTS --------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}           % better kerning and justification
+
+% ---- PAGE LAYOUT -------------------------------------------
+\usepackage[
+    top=3cm, bottom=3cm,
+    inner=3.5cm, outer=2.5cm,   % asymmetric: wider inner margin for binding
+    headsep=1cm
+]{geometry}
+\usepackage{emptypage}           % no headers on empty pages
+\usepackage[absolute]{textpos}   % used by cover page
+
+% ---- MATH --------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{bm}                  % bold math symbols
+\usepackage{physics}             % \grad, \curl, \dd, \abs etc.
+
+% ---- FIGURES & TABLES --------------------------------------
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{booktabs}            % professional tables (\toprule etc.)
+\usepackage{array}
+\usepackage{multirow}
+\graphicspath{
+    {figures/ch1_lodi/}
+    {figures/ch2_cosmofold/}
+    {figures/ch3_emulator/}
+    {figures/ch4_dps/}
+    {images/}
+}
+
+% ---- COLORS ------------------------------------------------
+\usepackage{xcolor}
+\definecolor{sissablue}{RGB}{0, 82, 147}
+
+% ---- HYPERLINKS --------------------------------------------
+\usepackage[
+    colorlinks=true,
+    linkcolor=sissablue,
+    citecolor=sissablue,
+    urlcolor=sissablue,
+    bookmarks=true,
+    pdftitle={PhD Thesis — Satvik Mishra},
+    pdfauthor={Satvik Mishra}
+]{hyperref}
+\usepackage[noabbrev, capitalise]{cleveref}   % \cref, \Cref
+
+% ---- BIBLIOGRAPHY ------------------------------------------
+\usepackage{natbib}              % \citep, \citet — MNRAS style
+\setcitestyle{aysep={}}
+
+% ---- HEADERS & FOOTERS -------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\small\leftmark}
+\fancyhead[RO]{\small\rightmark}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---- ABSTRACT (used on cover) ------------------------------
+\usepackage{abstract}
+
+% ---- UNITS -------------------------------------------------
+\usepackage{siunitx}
+\sisetup{separate-uncertainty=true}
+
+% ---- ALGORITHMS --------------------------------------------
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% ---- MISC --------------------------------------------------
+\usepackage{lipsum}              % placeholder text — remove when done
+\usepackage{todo}                % \todo{} notes — remove before submission
+
+% ============================================================
+% CUSTOM COMMANDS
+% ============================================================
+
+% --- Cosmological parameters
+\newcommand{\Om}{\Omega_\mathrm{m}}
+\newcommand{\sige}{\sigma_8}
+\newcommand{\Ob}{\Omega_\mathrm{b}}
+\newcommand{\hub}{H_0}
+
+% --- Fields and maps
+\newcommand{\xHI}{x_\mathrm{HI}}
+\newcommand{\Tb}{T_\mathrm{b}}           % brightness temperature
+\newcommand{\rhoDM}{\rho_\mathrm{DM}}
+\newcommand{\rhoHI}{\rho_\mathrm{HI}}
+
+% --- Power spectrum
+\newcommand{\Pk}{P(k)}
+\newcommand{\Pkr}{r(k)}                  % P(k) ratio
+
+% --- Diffusion / ML notation
+\newcommand{\xt}{\mathbf{x}_t}
+\newcommand{\xo}{\mathbf{x}_0}
+\newcommand{\xhat}{\hat{\mathbf{x}}_0}   % Tweedie estimate
+\newcommand{\score}{\nabla_{\xt} \log p(\xt)}
+
+% --- Abbreviations
+\newcommand{\eg}{e.g.,\xspace}
+\newcommand{\ie}{i.e.,\xspace}
+\newcommand{\etal}{et al.\xspace}
+
+% --- Simulation names (consistent formatting)
+\newcommand{\CAMELS}{\textsc{CAMELS}}
+\newcommand{\LODI}{\textsc{LODI}}
+\newcommand{\COSMOFOLD}{\textsc{Cosmo-FOLD}}
+\newcommand{\HALOgen}{\textsc{HALOgen}}
+\newcommand{\TNG}{IllustrisTNG}
+
+% --- Units shorthand
+\newcommand{\Mpch}{\,h^{-1}\,\mathrm{Mpc}}
+\newcommand{\hMpci}{\,h\,\mathrm{Mpc}^{-1}}
