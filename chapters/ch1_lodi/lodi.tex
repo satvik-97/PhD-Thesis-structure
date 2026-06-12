@@ -1,8 +1,35 @@
 % ============================================================
 % chapters/ch1_lodi/lodi.tex
 % ============================================================
-\chapter{Large, Fast and Accurate \HI\ Intensity Maps with Latent Overlap Diffusion}
-\label{ch:lodi}
+\chapter{LODI: Large, Fast and Accurate Neutral Hydrogen Intensity Maps with Latent Overlap Diffusion}
 
-% TODO: write chapter — based on arXiv:2506.08086 (MNRAS Vol.545, 2026)
-\lipsum[1-3]
+\label{ch:lodi}
+\section{Problem statement}
+Tell why we need to have the modeling of the HI signal and what has been done in the past in this domain.
+
+\section{LODI pipeline}
+Start explaining the reason for this specific 2 step pipeline
+
+\subsection{Extracting halos from DM only sim}
+\subsubsection{Halogen: Network architecture}
+Explain the multi channel ResUnet
+\subsubsection{Loss function: Masking technique}
+Talk about the masking strategy. 
+
+\section{Generating 21 cm brightness temperature fields}
+
+\subsection{VDM: Variational Diffusion model}
+A Theoretical description of the VDM used in this work
+\subsection{Network architecture}
+The denoising network.
+\subsection{Repaint and stitching with LODI}
+Explain the stitiching method using Repaint and LODI
+
+\section{Results}
+
+\subsection{Halo prediction}
+Show halo ouptut for test sim on camels
+\subsection{Generating 21 cm maps}
+Show the combination of results using the pipeline
+
+
