@@ -24,6 +24,41 @@ The paper is organized as follows: in Section \ref{methodology} we describe in t
 
 
 
+
+
+
+
+
+
+
+
+
+
+Cosmological simulations are essential tools for understanding the formation and evolution of structure in the Universe. They allow us to explore the complex interplay of gravitational, hydrodynamic, and astrophysical processes shaping the distribution of matter from large down to highly non-linear galactic and sub-galactic scales. However, high-fidelity hydrodynamical simulations are computationally very expensive, limiting their applicability when the parameter space is large  in inference studies. For example, the IllustrisTNG simulations~\citep{nelson2021illustristngsimulationspublicdata,Pillepich_2017} required approximately 35 million CPU-hours for the largest \TNG run and about 18 million CPU-hours for TNG100, while EAGLE~\citep{EAGLE} consumed roughly 4.5 million CPU-hours.
+
+Such computational demands become particularly prohibitive for cosmological or astrophysical field-level inference and simulation-based inference (SBI) frameworks, which require large ensembles of conditional forward simulations to explore the parameter spaces. Recent works have shown promising applications, including the cosmological context~\citep{angulo_large-scale_2022,jeffrey_likelihood-free_2020,bairagi2025simulationsneedsimulationbasedinference,Zeghal_2025,karchev2023simsimssimulationbasedsupernovaia,Saxena_2024,tucci24}. However, their applicability remains limited by the requirement of generating sufficient high-fidelity simulations. This computational bottleneck underlines the need for fast, accurate surrogate models capable of reproducing cosmological fields at a fraction of the cost -- not limited to dark matter, but crucially including baryonic observables that can be directly constrained with data. Recent works have explored various approaches to modeling cosmological fields using generative adversarial networks \citep[e.g.,][]{andrianomena2022}, probabilistic methods \citep{ono_debiasing_2024}, and diffusion-based techniques \citep[e.g.,][]{rouhiainen_cosmology_2024,mishra2025largefastaccuratehi}. These methods aim to overcome the computational bottlenecks and enable fast sampling of cosmic structures, preserving both large-scale coherence and small-scale physical accuracy. A related goal, currently hampered by similar computational bottlenecks, is to complement traditional summary statistics (such as two- and three-point statistics) with more informative data-driven summaries that best capture non-Gaussian features of the evolved non-linear fields (e.g.~\cite{bairagi2025patchnethierarchicalapproachneural,Borg,lanzieri2025optimalneuralsummarisationfullfield,Bayer_2025}.
+
+In recent years, machine learning techniques, and in particular generative models, have emerged as powerful emulators to reproduce cosmological and astrophysical fields~\citep{perraudin2019cosmologicalnbodysimulationschallenge,Li_2021,jamieson_field-level_2023,Rigo_2025,hassan_hiflow_2022,andrianomena_emulating_2022,sharma25,bernardini2025ember2,andrianomena2024cosmologicalmultifieldemulator}. Among them, diffusion models—a class of stochastic generative models that generate data by learning to reverse a gradual noising process by iteratively denoising corrupted data samples—have gained significant attention due to their ability to produce high-fidelity, diverse outputs~\citep{sohl-dickstein_deep_2015, ho_denoising_2020, kingma_variational_2023}. These models have been successfully applied in astrophysics and cosmology, for example to emulate the baryonic processes affecting galaxy properties \citep{Chadayammuri_2023} or more in general to augment  the resolution of  simulations by using  a smaller set of high-resolution ones \citep{kodi20}.
+
+
+
+Despite these advances, a major challenge remains in scaling generative models to arbitrarily large, high-fidelity cosmological volumes, especially when constrained by GPU memory and computational cost. Moreover, the evolution of cosmic structure is inherently non-local, where long-range gravitational interactions couple distant regions and baryonic feedback processes, such as those driven by supernovae or active galactic nuclei, can redistribute matter over large scales. Accurately modeling these effects requires the network to learn global dependencies rather than simple local conditional relationships, which becomes particularly challenging when no similar low-resolution reference field is available to guide the generation.
+
+To overcome these limitations, we introduce \FOLD (for ``Cosmological Field Overlap Latent Diffusion''), a novel technique building on the variational diffusion model framework \LODI presented in~\cite{mishra2025largefastaccuratehi}. \FOLD enables the rapid and accurate generation of large three-dimensional cosmological fields by conditioning the denoising process on the underlying large scale matter distribution, represented by either the stellar density or dark matter density fields. We demonstrate the capability of our approach by generating gas temperature fields conditioned on dark matter density, as well as dark matter density fields reconstructed from sparse stellar density field distribution of IllustrisTNG--TNG300 simulations. 
+These two applications are particularly challenging and relevant since they are both intrinsically sensitive to small scale physical processes (star formation and galactic feedback), which also affect intermediate cosmological scales. 
+Another reason for the choice of these two applications and their importance is how they are manifested in terms of a summary statistics like the power spectrum. It is well known that baryonic processes, as simulated in state-of-the-art hydrodynamical simulations, determine a suppression of power at $k\sim~1\, h/$Mpc  caused by feedback, and a steep increase of power at smaller scales $k\gg 1\,h/$Mpc produced by stars forming in the innermost parts of the (dark matter) haloes \citep{chisari19,schneider15,vandaalen20}. While the exact amount of suppression and increase of power varies among the different sets of simulations, the shape of the effects is a common prediction of most of the models.
+Our choices for the temperature field and stellar fields is a natural choice to address these two different scales and verify the performance of our method in these regimes.
+
+The model is trained on just $\approx1\%$ and validated on $\approx0.5\%$ of the simulation volume, before being applied to synthesize complete large-scale realization, with excellent performance across 1-, 2- and 3-points statistics. \FOLD naturally enforces periodic boundary conditions and surpasses previous overlapping patch-based approaches by eliminating edge artifacts and maintaining structural coherence even when conditioned on the highly sparse stellar input.
+
+The paper is structured as follows: in Section~\ref{sec:methods}, we describe the datasets used and the methodology. Section~\ref{sec:results} presents results on both test datasets and larger simulation volumes. We conclude with a discussion  in Section~\ref{sec:conclusions}.
+
+
+
+
+
+
+
 \section{The Cosmological Context}
 \section{The Simulation Bottleneck}
 \section{Machine Learning for Field-Level Cosmology}
