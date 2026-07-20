@@ -7,7 +7,10 @@
 \section{Problem statement}
 Tell why we need to have the modeling of the HI signal and what has been done in the past in this domain.
 \section{Data and simulations}
-Talk about CAMELS and how the hydro sim works.
+We use the CAMELS dataset~\citep{villaescusa-navarro_camels_2022}, which is a suite of hydrodynamical simulations created by varying cosmological and astrophysical parameters, along with different initial seeds. This is especially useful to test the generalization performance of the model trained on 3D cosmological dark matter density and brightness temperature maps. {Each simulation box has a comoving side of length $25h^{-1}$ Mpc and contains $256^3$ gas cells and $256^3$ dark matter particles. CAMELS is based on the AREPO~\citep{weinberger_arepo_2020} and GIZMO~\citep{Hopkins_2015_GIZMO} codes and run the same subgrid physics and feedback effects of IllustrisTNG and SIMBA simulations respectively. The hydrodynamics is evolved with the moving-mesh code AREPO  which combines a TreePM gravity solver with a finite-volume Godunov scheme on an unstructured Voronoi mesh. Gas cells above a density threshold are treated with the  multiphase star-formation model of \citet{Springel_2003}. Stellar winds and black-hole seeding/growth with AGN feedback
+follow the IllustrisTNG prescriptions. The particles are evolved from a redshift of $z=127$. } 
+
+For this work, we train on the CV set of IllustrisTNG, which contains $256^3$ gas and dark matter particles (which are later subdivided into $256^3$ voxels), all run with the cosmological and astrophysical parameters set to: $\Omega_m=0.3,\sigma_8 = 0.8,A_\text{SN1}=A_\text{SN2}=A_\text{AGN1}=A_\text{AGN2}=1.0$, {Here, $\Omega_m$ denotes the present-day matter density parameter and $\sigma_8$ is the root-mean-square amplitude of linear matter fluctuations on scales of $8h^{-1}$ Mpc. $A_\text{SN1}, A_\text{SN2}$ are the supernova feedback process parameters of the model and $A_\text{AGN1}, A_\text{AGN2}$ are the active galactic nuclei feedback process parameters, with values of 1.0 corresponding to their fiducial calibration in IllustrisTNG.} There are 27 different initial seeds for each of the 27 simulations.
 \section{LODI pipeline}
 Start explaining the reason for this specific 2 step pipeline
 
