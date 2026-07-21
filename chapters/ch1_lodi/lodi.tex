@@ -16,18 +16,382 @@ Start explaining the reason for this specific 2 step pipeline
 
 \subsection{Extracting halos from DM only sim}
 \subsubsection{Halogen: Network architecture}
-Explain the multi channel ResUnet
+
+
+A U-Net, introduced by~\citet{ronneberger_u-net_2015} is a deep hierarchical convolutional neural network with encoder and decoder layers, used to perform image-to-image translation tasks -- an ideal architecture for our aim of predicting halo maps from $\boldsymbol{\rho}_\text{DM}$ maps. 
+
+We use ResNet blocks~\citep{he_deep_2015} as the fundamental blocks for the U-Net architecture, as well as an attention block at the bottleneck motivated by~\citet{petit_u-net_2021}. The attention block enhances the ability of the model to capture and highlight complex structure and long-range dependencies within the data. 
+% \begin{figure*}
+%     \centering
+%     \includegraphics[width=0.6\linewidth]{Unet_dm_to_halo.pdf}
+%     \caption{Overview of the \HALO\ (Halo Assignment and Generation with U-Net) architecture used for halo assignment from an input DM-only map, employing grouped 3D convolutions (gray blocks) and an attention mechanism at the bottleneck. Upsampling is done via trilinear interpolation to avoid artifacts in the upsampled map. Horizontal lines represent skip connections.{The input data has shape of $64^3$ voxels while the bottleneck has a spatial shape of $8^3$.} }
+%     \label{fig:Unethalo}
+% \end{figure*}
+The architecture, depicted in Fig.~\ref{fig:Unethalo}, consists of 3 encoding blocks with grouped convolutions, which process a 3D $\boldsymbol{\rho}_\text{DM}$ input of size $64^3$ voxels. The input is progressively downsampled through three stages, reaching a bottleneck representation of size of $8^3$ voxels, with $2\times2\times2$ kernel max-pooling layers employed for downsampling to reduce spatial resolution while preserving dominant features. 
+For the up-sampling leg of the architecture, we use trilinear interpolation instead of the more commonly used transposed convolutions to avoid checkered board artifacts grid-like patterns that can arise when upsampling images. Trilinear interpolation estimates voxel values by computing a weighted average of the eight nearest neighbors, ensuring a smoother reconstruction. To enhance high-level feature preservation, we incorporate skip connections (represented as horizontal grey lines in Fig.~\ref{fig:Unethalo}) after upsampling, whose aim is to transfer directly feature maps from corresponding encoder layers to decoder layers, thus bypassing the bottleneck. 
+
+The last decoder block leads to a set of grouped convolution layers that transform the output into 4 channels, each corresponding to a halo map density field $\boldsymbol{\rho}_{\text{h}}^{(i)}$, where $i=1,\dots,4$ is the channel number. Each channel describes halos within a top-hat mass range (a bin). Attributing halos to different mass bins is necessary to reduce the dynamic range of the relationship between halo mass and HI mass, and to account for its strong dependence on halo mass: halos with mass $M_{\text{halo}}<3\times10^{10}~M_\odot $ contribute $\approx 95 \%$ of the total number count of halos, but their combined HI mass is only $\approx 5 \%$ of the total HI in the simulation. At the other end of the mass distribution, halos of mass $\geq 10^{12} M_\odot$ populate only about $\approx 0.5 \%$ of the simulation but account for more than $ 25 \%$ of the HI mass. Our binning both reduces the dynamic range spanned by the $M_{\text{HI}}$ to $M_{\text{halo}}$ relationship (thus facilitating learning) and also accounts for the halo-mass dependency of the relation.
+{The HI mass function, as determined by~\citet{Ma_2025_FASHI,Jones_ALFA}, features a knee HI mass of $\approx7.5\times10^9M_\odot$, with the power-law slope for low mass being $\alpha=-1.3$, indicating that contribution from HI regions smaller than the knee HI mass is non-negligible. Following~\citet{villaescusa-navarro_ingredients_2018}, the HI cutoff mass for our case is $\approx10^8M_\odot$, which is almost two orders of magnitude smaller than the knee mass determined observationally. This provides reassurance that we are accounting for most of the HI regions.} 
+
+The (fixed) boundaries of the top-hat mass ranges are chosen to obtain similar HI mass within each bin\footnote{This remains true, up to a few percent, for all maps in the cross-validation set of the simulation, which share the same astrophysical parameters. Generalizing this approach across different parameter values will be the focus of future work.},  and are given by:
+\begin{equation}
+\left[3 \times 10^{10}, 10^{11}, 5 \times 10^{11}, 10^{12}, \max \left( M_{\text{halo}} \right) \right] \ M_\odot \, . 
+\label{eq:halo_bins}
+\end{equation}
+{where the maximum value of $M_\text{halo}$ is $\approx 1.7\times10^{14}M_\odot$.} 
+We use group convolution and group normalization layers to enforce that output channels be independent; experimentation with mixing the information between different groups (4 or multiples of 4) has shown that this degrades performance. The output of the network has a voxel dimension of $4\times 64^3$. {Compared to larger simulations such as TNG300, which host halos up to $\approx 10^{15}M_\odot$, the smaller CAMELS volumes do not sample such large systems. While this restricts the direct modeling of the rarest, most massive clusters, CAMELS provides a more machine-learning–friendly baseline, and our approach can in the future be extended to larger simulations or large cluster regions. }
+
+To create the full $256^3$ voxels map, we take  individual $64^3$ voxels sub-volume dark matter fields and feed them to our model. Then we use a stride of 16 pixels in every cartesian direction to pick our next $64^3$ box. The overlapping pixels are averaged over to get the final output. 
+
+\subsubsection{Training dark matter and halo mass density maps}
+
+To obtain the input DM mass density map, we take the positions for each DM particle from the DM-only simulations with side 25$\Mpch$ and convert them to 3 dimensional $\boldsymbol{\rho}_\text{DM}$ fields of size $256^3$ voxels, by using the cloud in cell (CIC) algorithm. {The cloud-in-cell (CIC) algorithm assigns particle masses to a regular grid by distributing each particle’s mass to the eight nearest grid points, weighted linearly by the particle’s relative distance from each grid point. This produces a continuous density field while conserving total mass.} Our field resolution is thus $\approx 0.1\Mpch$. We use for our model training the CAMELS dataset from~\citet{villaescusa-navarro_camels_2022}, a suite of hydrodynamical and N-body cosmological simulations.
+
+To determine the halo mass density field $\rhoh$, we use the SUBFIND algorithm~\citep{springel_populating_2000}, available in the simulation suite to extract the halo center of mass positions and then use the same CIC algorithm, weighted by the mass of the halos. We manually create the four halo channels using the bins given in~Eq.~\eqref{eq:halo_bins}, and apply the CIC algorithm on each bin separately.
+
+
+Maps are smoothed with a Gaussian kernel of fixed radius $R = 0.2\Mpch$ to increase the signal to noise ratio (SNR) and remove irrelevant small-scale features to help training.
+
+
 \subsubsection{Loss function: Masking technique}
-Talk about the masking strategy. 
+\subsubsection{\HALOgen~loss function} 
 
-\section{Generating 21 cm brightness temperature fields}
+The loss function needs to deal with the sparsity of the $\rhoh^{(i)}$ maps. Furthermore, a given DM voxel may be associated with multiple halos of different masses (and falling into different halo mass bins), making it challenging for the model to disentangle their respective contributions. We call this phenomenon `channel mixing', i.e., the fact that halo information from one channel leaks into adjacent channels. Moreover, since the binning scheme is not explicitly encoded within the neural network architecture, the model must learn to distinguish halos across adjacent bins without misclassifications. 
+Ensuring proper bin differentiation is crucial to maintaining the physical consistency of the model predictions. 
 
-\subsection{VDM: Variational Diffusion model}
-A Theoretical description of the VDM used in this work
+To address the above issues, we create a custom-weighted mask, $m_w^i$ ($i=1, \dots, 4$), associated to each halo channel $i$. The purpose of the mask is to give higher weight to pixels with halos in channel $i$, while enforcing a negligible contribution to the loss from halos in neighboring channels, thus helping both with sparsity and channel separation.
+
+For a given halo channel $i$, with halo mass density field $\boldsymbol{\rho}_{\text{h}}^{(i)}$, we define its weight as:
+\begin{equation} \label{eqn:mask}
+    w^i = 
+    \frac{N_\text{mesh}^3}{\displaystyle \sum_{j = \max(1,i-1)}^{\min(4,i+1)} \sum_{k=1}^{N_\text{mesh}} {\boldsymbol{\theta}}(\rho_h^{(j,k)} - T_c^{(j)})} \geq 1 \, ,
+\end{equation}
+where $\rho_h^{(j,k)}$ is the halo field density for channel $j$ at pixel $k$ and ${\boldsymbol{\theta}}(x)$ is the Heaviside function. The threshold $T_c^{(j)}$ is determined from the empirical CDF of  $\rho_{\text{h}}^{(j,k)}$, in such a way that 
+\begin{equation}
+    P(\rho_{\text{h}}^{(j,k)}> T_c^{(j)}) = 0.05 \,. 
+\end{equation}
+In other words, the threshold eliminates pixels that contain low-density values, and only retains the highest 5\% of the log-density distribution in each channel. Note that for a given channel $j$, the pixels used for the computation are taken not only from the channel $j$, but also from the immediate neighboring channels, $j + 1$ and $j-1$. For the boundary channels (i.e., $j=1$ and $j=4$), we include only the next or previous channel, respectively. Now we define a pixel- and channel-specific mask $m_w^{(i,k)}$ by incorporating these weights:
+\begin{equation}
+    m_w^{i,k} = 
+\begin{cases} 
+    w^i & \text{if } \rho_{\text{h}}^{(i,k)} > T_c^{(i)} \\
+    1  & \text{if } \rho_{\text{h}}^{(i,k)} \leq T_c^{(i)} \, .
+\end{cases}
+\end{equation}
+We normalize the mask such that $\displaystyle \sum_{i,k} m_w^{i,k}= 64$, or each training mask of shape $4\times64^3$ adds to 1 on average, since each simulation is made of 64 sub-volumes.
+
+An illustration of the construction of $m_w^{(i,k)}$ is shown in figure~\ref{fig:unet_halo_MASK}. By construction, pixels corresponding to halo sites for channel $j$ (beige) have high mask values; the mask also has large values for adjacent channel's halo positions (golden), in order to enforce the absence of halos there in the particular channel under consideration, since  for these regions, the target voxel value corresponds to the small background values.
+% \begin{figure*}
+%     \centering
+%     \includegraphics[width=1.0\linewidth]{output1.png}
+%     \caption{Illustration of the halo density channels masking prescription. The first row of 4 images shows a 2D slice of the training halo maps $\rho_\text{h}^{(j)}$ for each halo mass channel $j$. The second row shows the corresponding 2D weighted mask maps, $m_w^{j,k}$. In each masking map, the contribution from the halo $j$ is shown in beige, and the contribution from the neighboring channel's halo location is shown in golden.}
+%     \label{fig:unet_halo_MASK}
+% \end{figure*}
+
+The masked loss function is then written as:
+\begin{equation} \label{eqn:lossfn}
+    \mathcal{L} = \displaystyle\sum_{j=1}^4 \left(\alpha L_2^j\odot m_w^j\beta^j + \left(1-\alpha \right)L^j_q
+     \right) + \lambda_w L_1^{\text{reg}}
+\end{equation} 
+with $\alpha,\beta^{j=1, \dots, 4},\lambda_w$ being hyper-parameters of the model. The loss incorporates both the mean squared error $L_2^j$ and the quantile loss $L_q^j$  between the pixel-level target density, $\rho_{\text{h}}^{(j,k)}$, and its predicted value, $\rho_{\text{pred}}^{(j,k)}$, weighed by the mask for the $L_2$ loss, with the direct product running over pixel values $k$:
+\begin{equation}
+\begin{split}
+L_{q}^{j} &=
+  \frac{1}{N_\text{mesh}}\sum_{k=1}^{N_\text{mesh}}
+  \max\!\Bigl(
+      q\left(\rho_{\text{h}}^{(j,k)}-\rho_{\text{pred}}^{(j,k)}\right),
+      (q-1)\left(\rho_{\text{h}}^{(j,k)}-\rho_{\text{pred}}^{(j,k)}\right)
+  \Bigr),\\
+L_{2}^j &=
+  \frac{1}{N_\text{mesh}}\sum_{k=1}^{N_\text{mesh}}
+  \left(\rho_{\text{pred}}^{(j,k)}-\rho_{\text{h}}^{(j,k)}\right)^{2}.
+\end{split}
+\end{equation}
+Here $q \in (0, 1)$ is the chosen quantile.
+The weights $\beta^j$ set the relative scaling of the contribution of a particular channel to the loss. 
+To further deal with sparsity, we add the $L_1^{\text{reg}}$ regularization term, defined as:
+\begin{equation}
+    L_1^{\text{reg}} = \sum_{i=1} \left| w^i_{\boldsymbol{\theta}} \right|
+\end{equation}
+where $\left| w^i_{\boldsymbol{\theta}} \right|$ are the neural network weights, and $i$ runs over the network's parameters.
+\vspace{\baselineskip}
+
+
+
+
+\subsubsection{Training of \HALOgen}
+To train \HALOgen, we use one single simulation from the CV set and test on other simulations in the same set, with different initial seeds, but same simulation parameters. Both dark matter and halo maps are divided into $64^3$ sub-volumes, rotated, and augmented to get rotationally-equivariant training. 
+
+We input the $64^3$ voxels $\rhoDM$ field in batches of 16 and apply the loss function {in equation}~\eqref{eqn:lossfn} to the predicted output, using the weighted mask in {equation}~\eqref{eqn:mask}. The optimizer used for training is {\texttt{RMSprop} (Root Mean Square Propagation), an adaptive gradient-based optimization algorithm that scales the learning rate for each parameter by a running average of its recent squared gradients, a standard technique in deep learning architectures.} The learning rate schedule is set as follows: the first 10 epochs are run with a learning rate of $2\times10^{-4}$; after that, we use Cosine Annealing Warm Restarts with the maximum and minimum values set to $10^{-4}$ and $3\times10^{-5}$, respectively, with a repeat cycle of 50 epochs. {The cosine annealing warm restarts changes the learning rate between the maximum and minimum value, with a cosine decay, while repeating this cycle every 50 epochs in our case.} We run the model for 260 epochs, and store the model's weights at the point in which the validation loss is lowest. We subdivide the data into training and validation set, with a $75\%$ and $25\%$ split. 
+{In equation~\eqref{eqn:lossfn},} the coefficient $\lambda_w$ of the regularization term $L_1^{\text{reg}}$ is set to $10^{-6}$. For the results in the paper, we use $\alpha = 0.6,q=0.7$ and $\beta^j=[1,2,5,8]$. The above hyper-parameters have been chosen to achieve the best predictions, after extensive testing. 
+
+
+
+
+\section{\LODI:Generating 21 cm brightness temperature fields with Latent overlap diffusion}
+
+
+
+\subsection{VDM: Variational Diffusion Model}
+\label{sec:vdm}
+
+A brief introduction to generative diffusion models is given in Sec.~\ref{sec:diffusion_intro}. Hereafter, any reference to diffusion models refers specifically to the Variational Diffusion Model \citep[VDM;][]{kingma_variational_2023}. In what follows, we describe the key features that distinguish the VDM from the standard Denoising Diffusion Probabilistic Model \citep[DDPM;][]{ho_denoising_2020}, namely the continuous-time formulation, the signal-to-noise ratio parameterisation of the noise schedule, and the variational objective that enables all components including the noise schedule itself to be learned end to end.
+
+%% ----------------------------------------------------------------
+\subsubsection{From discrete steps to continuous time}
+\label{sec:vdm_continuous}
+
+Recall from Sec.~\ref{sec:diffusion_intro} that a DDPM defines a forward (noising) process over $T$ discrete steps with a fixed variance schedule $\{\beta_t\}_{t=1}^{T}$, and that the closed-form forward marginal (Eq.~\ref{eq:forward_closed_form}) is
+\begin{equation}
+    q(\bm{x}_t \mid \bm{x}_0) = \mathcal{N}\!\left(\bm{x}_t;\, \sqrt{\bar\alpha_t}\,\bm{x}_0,\; (1-\bar\alpha_t)\,\bm{I}\right), \qquad \bar\alpha_t \equiv \prod_{s=1}^{t}(1-\beta_s)\,.
+    \label{eq:forward_marginal_recap}
+\end{equation}
+The VDM generalises this by promoting the discrete index $t \in \{1,\dots,T\}$ to a continuous variable $t \in [0,1]$. The forward process remains Gaussian:
+\begin{equation}
+    q(\bm{x}_t \mid \bm{x}_0) = \mathcal{N}\!\left(\bm{x}_t;\, \alpha_t\,\bm{x}_0,\; \sigma_t^2\,\bm{I}\right),
+    \label{eq:vdm_forward}
+\end{equation}
+where $\alpha_t$ and $\sigma_t$ are the continuous-time analogues of $\sqrt{\bar\alpha_t}$ and $\sqrt{1-\bar\alpha_t}$, respectively, satisfying the variance-preserving constraint $\alpha_t^2 + \sigma_t^2 = 1$.\footnote{We switch from $\bm{x}_t$ to $\bm{z}_t$ for the noisy variable in the VDM to distinguish the continuous time latents from the discrete DDPM chain, and use $a_t$ in place of $\sqrt{\bar\alpha_t}$ to avoid confusion with the per-step $\beta_t$ notation of Sec.~\ref{sec:diffusion_intro}.}
+
+Rather than specifying the noise level through a list of $\beta$ values, the VDM encodes the entire schedule in a single scalar function: the \emph{log signal-to-noise ratio} (log-SNR),
+\begin{equation}
+    \gamma(t) \;=\; \log\frac{\alpha_t^2}{\sigma_t^2}\,,
+    \label{eq:log_snr}
+\end{equation}
+which is a monotonically \emph{decreasing} function of $t$: at $t=0$ the signal dominates ($\gamma \to +\infty$), while at $t=1$ noise dominates ($\gamma \to -\infty$). Because $\alpha_t^2 + \sigma_t^2 = 1$, the signal and noise coefficients can be recovered from $\gamma(t)$ alone:
+\begin{equation}
+    \alpha_t^2 = \mathrm{sigmoid}\!\big(\gamma(t)\big), \qquad
+    \sigma_t^2 = \mathrm{sigmoid}\!\big({-}\gamma(t)\big).
+    \label{eq:a_sigma_from_gamma}
+\end{equation}
+The entire noise schedule is therefore encoded in the single scalar function $\gamma(t)$, which replaces the $T$-dimensional vector $\{\beta_t\}$ of the DDPM.
+
+%% ----------------------------------------------------------------
+\subsubsection{The variational objective}
+\label{sec:vdm_elbo}
+
+The name \emph{Variational} Diffusion Model reflects the fact that the training objective is derived rigorously as an Evidence Lower Bound (ELBO) on the log-likelihood of the data, rather than as a heuristic reweighting of a denoising loss. Recall from Sec.~\ref{sec:diffusion_intro} that DDPM training uses a ``simple'' loss (Eq.~\ref{eq:diffusion_loss}) that drops the SNR-dependent prefactors from the true variational bound. The VDM instead retains the full ELBO structure.
+
+In the continuous-time limit ($T \to \infty$), \citet{kingma_variational_2023} show that the negative ELBO decomposes into three terms:
+\begin{equation}
+    -\,\text{ELBO} \;=\; \underbrace{\mathcal{L}_{\mathrm{diffusion}}}_{\text{denoising quality}} \;+\; \underbrace{\mathcal{L}_{\mathrm{latent}}}_{\text{prior matching}} \;+\; \underbrace{\mathcal{L}_{\mathrm{recon}}}_{\text{reconstruction}}\,.
+    \label{eq:elbo_decomposition}
+\end{equation}
+We discuss each in turn.
+
+\paragraph{Diffusion loss.}
+The diffusion loss is an integral over the continuous time variable,
+\begin{equation}
+    \mathcal{L}_{\mathrm{diffusion}} = \frac{1}{2}\int_0^1 \!\gamma'(t)\;\,
+    \mathbb{E}_{q(\bm{z}_t|\bm{x}_0)}\!\Big[\big\|\bm{x}_0 - \hat{\bm{x}}_{\bm{\theta}}(\bm{z}_t, t)\big\|^2\Big]\,\mathrm{d}t\,,
+    \label{eq:vdm_diffusion_loss}
+\end{equation}
+where $\hat{\bm{x}}_{\bm{\theta}}(\bm{z}_t, t)$ is the model's estimate of the clean data from the noisy input $\bm{z}_t$, and $\gamma'(t) = \mathrm{d}\gamma / \mathrm{d}t$ is the derivative of the log-SNR with respect to time.
+During training, the integral is estimated by sampling $t \sim \mathcal{U}(0,1)$ and evaluating the integrand at the sampled time.
+
+The factor $\gamma'(t)$ plays a crucial role: it naturally \emph{weights} different noise levels according to the rate at which the SNR changes. If the schedule varies rapidly at some time $t_\star$ meaning the model transitions quickly between signal and noise dominated regimes the loss receives more weight there. This is fundamentally different from the DDPM, where the ``simple'' loss of \citet{ho_denoising_2020} drops all SNR-dependent prefactors, treating every noise level equally.
+
+An equivalent and widely used form of Eq.~\eqref{eq:vdm_diffusion_loss} is the \emph{noise prediction} parameterisation. If the network predicts the noise $\hat{\bm{\epsilon}}_{\bm{\theta}}(\bm{z}_t, t)$ instead of the clean signal, the two are related by the identity,
+\begin{equation}
+    \hat{\bm{x}}_{\bm{\theta}} = \frac{\bm{z}_t - \sigma_t\,\hat{\bm{\epsilon}}_{\bm{\theta}}}{\alpha_t}\,,
+    \label{eq:tweedie}
+\end{equation}.
+
+\paragraph{Latent loss.}
+The latent loss measures how close the fully noised distribution $q(\bm{z}_1 \mid \bm{x}_0)$ is to the standard Gaussian prior $p(\bm{z}_1) = \mathcal{N}(\bm{0}, \bm{I})$:
+\begin{equation}
+    \mathcal{L}_{\mathrm{latent}} = D_{\mathrm{KL}}\!\Big(q(\bm{z}_1 \mid \bm{x}_0)\;\big\|\;p(\bm{z}_1)\Big).
+    \label{eq:latent_loss}
+\end{equation}
+Since both distributions are Gaussian, the KL divergence is available in closed form. For a well-behaved schedule with $\gamma(1) \ll 0$ (i.e.\ the endpoint SNR is very low), $q(\bm{z}_1|\bm{x}_0)$ is already close to $\mathcal{N}(\bm{0},\bm{I})$ and this term is small.
+
+\paragraph{Reconstruction loss.}
+The reconstruction loss accounts for the final decoding step from $\bm{z}_0$ to the data $\bm{x}_0$:
+\begin{equation}
+    \mathcal{L}_{\mathrm{recon}} = -\,\mathbb{E}_{q(\bm{z}_0|\bm{x}_0)}\!\Big[\log p_{\bm{\theta}}(\bm{x}_0 \mid \bm{z}_0)\Big].
+    \label{eq:recon_loss}
+\end{equation}
+In practice, this takes the form of a Gaussian negative log-likelihood evaluated at $\bm{z}_0$, which is a very lightly noised version of $\bm{x}_0$ (since $\gamma(0) \gg 0$).
+
+\paragraph{} The total training loss is a weighted sum,
+\begin{equation}
+    \mathcal{L} = \lambda_{\mathrm{diff}}\,\mathcal{L}_{\mathrm{diffusion}} + \lambda_{\mathrm{lat}}\,\mathcal{L}_{\mathrm{latent}} + \lambda_{\mathrm{rec}}\,\mathcal{L}_{\mathrm{recon}}\,,
+    \label{eq:total_loss}
+\end{equation}
+where $\lambda_{\mathrm{diff}}, \lambda_{\mathrm{lat}}, \lambda_{\mathrm{rec}}$ are scalar coefficients. Setting all three to unity recovers the exact negative ELBO, providing a principled lower bound on $\log p(\bm{x}_0)$.
+
+%% ----------------------------------------------------------------
+\subsubsection{Learned noise schedule}
+\label{sec:vdm_schedule}
+
+A key advantage of the VDM framework is that the noise schedule $\gamma(t)$ can be \emph{learned} jointly with the denoising network $\hat{\bm{x}}_{\bm{\theta}}$. Since $\gamma'(t)$ appears as a weighting factor in the diffusion loss (Eq.~\ref{eq:vdm_diffusion_loss}), the shape of the schedule controls which noise levels receive the most training signal, while the endpoint values $\gamma(0)$ and $\gamma(1)$ set the SNR range over which the model operates. In this work, we adopt a \emph{learned linear schedule}:
+\begin{equation}
+    \gamma(t) = b + |w|\,t\,,
+    \label{eq:learned_linear}
+\end{equation}
+where $b$ and $w$ are learnable scalar parameters, and $|w|$ enforces monotonicity.\footnote{Since $\gamma$ must decrease with $t$, the sign convention is chosen such that $w < 0$ and $|w|$ ensures the slope is negative. Equivalently, some implementations write $\gamma(t) = \gamma_{\max} + (\gamma_{\min} - \gamma_{\max})\,t$ with $\gamma_{\max} > \gamma_{\min}$ by construction.} This is to be contrasted with the DDPM, where the schedule $\{\beta_t\}$ is a hyperparameter (typically linear or cosine) that must be manually tuned.
+
+%% ----------------------------------------------------------------
+\subsubsection{Sampling}
+\label{sec:vdm_sampling}
+
+Sampling from the VDM proceeds by discretising the continuous reverse process into $N_{\mathrm{steps}}$ steps. Starting from $\bm{z}_1 \sim \mathcal{N}(\bm{0},\bm{I})$, we iterate backwards through a set of times $1 = t_{N} > t_{N-1} > \cdots > t_0 = 0$:
+\begin{equation}
+    \bm{z}_{t_{i-1}} = \frac{\alpha_{t_{i-1}}}{\alpha_{t_i}}\left(\bm{z}_{t_i} + \sigma_{t_i}^2\,\nabla_{\bm{z}}\log p(\bm{z}_{t_i})\right) + \tilde{\sigma}_{i}\,\bm{\epsilon}\,, \qquad \bm{\epsilon} \sim \mathcal{N}(\bm{0},\bm{I}),
+    \label{eq:reverse_step}
+\end{equation}
+where $\nabla_{\bm{z}}\log p(\bm{z}_{t_i})$ is the score function, estimated from the network's noise prediction via $\hat{\bm{\epsilon}}_{\bm{\theta}}$, and $\tilde{\sigma}_i$ is the posterior standard deviation determined by the SNR values at $t_i$ and $t_{i-1}$.
+
+Crucially, the number of sampling steps $N_{\mathrm{steps}}$ is a \emph{sampling-time} hyperparameter that is independent of training. One can train the model once and then adjust $N_{\mathrm{steps}}$ at inference to trade off sample quality for computational cost. This decoupling is a direct consequence of the continuous-time formulation: the model learns a denoiser valid for all $t \in [0,1]$, and the sampling procedure merely queries it at a discrete subset of times.
+
+%% ----------------------------------------------------------------
+\subsubsection{Connection to score matching and the forward KL}
+\label{sec:vdm_score}
+
+The diffusion loss (Eq.~\ref{eq:vdm_diffusion_loss}) is closely related to \emph{denoising score matching}. The score of the noisy marginal, $\nabla_{\bm{z}_t}\log q(\bm{z}_t)$, can be expressed in terms of the noise as
+\begin{equation}
+    \nabla_{\bm{z}_t}\log q(\bm{z}_t) = -\frac{\bm{\epsilon}}{\sigma_t}\,,
+    \label{eq:score_noise}
+\end{equation}
+so training the network to predict $\bm{\epsilon}$ is equivalent to training it to estimate the score. 
+Since the score can be rewritten in terms of the noise via Eq.~\ref{eq:score_noise}, and assuming the network provides a good approximation $\hat{\bm{\epsilon}}_{\bm{\theta}}(\bm{z}_t, t) \approx \bm{\epsilon}$, the reverse sampling step (Eq.~\ref{eq:reverse_step}) takes the form
+\begin{equation}
+    \bm{z}_{s} = \frac{\alpha_s}{\alpha_t}\left(\bm{z}_{t} - \sigma_t\, c\, \hat{\bm{\epsilon}}_{\bm{\theta}}(\bm{z}_t, t)\right) + \sqrt{(1-\alpha_s^2)\,c}\;\bm{\epsilon}\,, \qquad \bm{\epsilon} \sim \mathcal{N}(\bm{0},\bm{I}),
+    \label{eq:ancestral_sampling}
+\end{equation}
+where $c = \exp\!\left(\gamma(s) - \gamma(t) - 1\right)$ and $0 < s < t \leq 1$. This is the form we use in practice for ancestral sampling from the trained VDM.
+
+This connection provides an alternative interpretation of the VDM: it learns a continuous family of score functions $\{s_{\bm{\theta}}(\bm{z}_t, t)\}_{t \in [0,1]}$ parameterised by the noise level, directly linking it to the score-based SDE framework of \citet{song_score-based_2021} mentioned in Sec.~\ref{sec:diffusion_intro}.
+
+Finally, it is worth noting that since the forward diffusion process $q(\bm{z}_t | \bm{x}_0)$ is fixed and data-defined while the reverse process $p_{\bm{\theta}}(\bm{z}_{t-1} | \bm{z}_t)$ is learned, the ELBO objective corresponds to minimising the \emph{forward} KL divergence $D_{\mathrm{KL}}(q \| p_{\bm{\theta}})$ the model is trained to cover all modes of the data distribution.
+
+
 \subsection{Network architecture}
-The denoising network.
-\subsection{Repaint and stitching with LODI}
-Explain the stitiching method using Repaint and LODI
+\subsubsection{Denoising network architecture}
+\label{sec:denoise_arch}
+
+The denoising network $\hat{\bm{\epsilon}}_{\bm{\theta}}(\bm{z}_t, t, \bm{x}_{\mathrm{cond}})$
+is a 3D U-Net, adapted from the 2D architecture
+of~\citet{ono_debiasing_2024} by replacing all 2D grouped convolutions with their
+3D counterparts and adding an extra convolutional layer to each residual block to
+increase the network's capacity for volumetric data.
+
+The encoder decoder structure consists of 4 downsampling and 4 upsampling stages,
+each built from residual convolutional blocks with skip connections between
+corresponding encoder and decoder levels. At the bottleneck, we include a
+self-attention block, which has been shown to facilitate faster convergence and
+capture both global and short-range correlations in the
+data~\citep{ono_debiasing_2024}. The full architecture is illustrated in
+Fig.~\ref{fig:DenoiseUnet}, while the layout of a residual block is depicted in Fig.~\ref{fig:resnet_block}. As mentioned, each convolution layer is a 3 dimensional convolution with learnable parameters, and is followed by a \texttt{SiLU} non linearity.
+\begin{equation}
+    \text{SiLU}(\bm{x}) = \bm{x} \odot \sigma(\bm{x}) = \frac{\bm{x}}{1 + e^{-\bm{x}}},
+    \label{eq:silu}
+\end{equation}
+where $\odot$ denotes element wise multiplication. The \texttt{net1} first extracts features from input vector $\bm{x}$, to which the time step embedding $\bm{e}_t$ is added via a learned linear projection so that the dimension of $\bm{e}_t$ matches with the extracted features. After this, a zero initialized convolution layer mixes this quantity. The final vector $\bm{h}$ produced is added to the input $\bm{x}$ and passed on to a downsampling block that reduces the spatial dimensionality of the output by 2 in each of the three axes.
+
+Note that we use group normalization instead of the more commonly used batch normalization. The reason is because our batches(number of training samples the gradient descent algorithm averages over per step) are quite small, and batch normalization can get quite noisy with low batch sizes. 
+
+\begin{figure}[t]
+    \centering
+    \input{figures/resnet_block.tex}
+    \caption{Architecture of a single residual block. The block consists of two
+    sub-networks (\texttt{net1} and \texttt{net2}), with the time-step embedding
+    $\bm{e}_t$ injected additively between them via a learned linear projection.
+    A residual skip connection (dashed) bypasses the main path; when the input and
+    output channel dimensions differ, a $1\times1$ convolution is applied along the
+    skip path. The final convolution in \texttt{net2} is zero-initialized so that
+    each block acts as an identity at the start of training.}
+    \label{fig:resnet_block}
+\end{figure}
+
+
+
+The network receives three inputs at every reverse step: the noised field
+$\bm{z}_t$, the conditioning field $\bm{x}_{\mathrm{cond}}$ (concatenated
+channel-wise with $\bm{z}_t$), and a sinusoidal time-step embedding $\bm{e}_t$
+that informs the network of the current noise level. The embedding is defined as
+\begin{equation}
+\begin{aligned}
+    \bm{e}_t
+    &= \bigl(\sin(\tilde{t}\,\boldsymbol{\omega}),\;
+              \cos(\tilde{t}\,\boldsymbol{\omega})\bigr),
+    \qquad \tilde{t}=1000\,t,\quad t\in[0,1], \\
+    \boldsymbol{\omega}
+    &= \bigl(\omega_k\bigr)_{k=0}^{d/2-1},
+    \qquad
+    \omega_k
+    = \exp\!\left(
+    -\log(\tau_{\max}) \, \frac{k}{d/2-1}
+    \right),
+\end{aligned}
+\label{eq:time_embedding}
+\end{equation}
+where $\tau_{\max}=10^4$ and $d$ is the embedding dimension. The factor of 1000
+stretches the unit interval $t \in [0,1]$ to a range where the sinusoidal
+frequencies are well-separated. We use $d=64$ throughout this work. The time
+embedding is injected into every residual block, allowing the network to
+modulate its behaviour as a function of the noise level.
+
+
+
+\subsection{Building the 21 cm temperature training map}
+
+
+To produce the 21 cm temperature map for training, we proceed as follows: {we obtain the neutral hydrogen fraction $x_{\text{HI}, i}$} and the gas particle mass $m_{g, i} \,  [\mathrm{M}_\odot]$, for each gas particle $i$ in the hydrodynamic simulation, from which we {first compute the HI mass per particle, $\mathrm{M}_{\text{HI}, i}$, as: } 
+{
+\begin{equation}
+    \mathrm{M}_{\text{HI}, i} = m_{g,i}x_{\text{HI}, i}X \, ,
+\end{equation}
+}
+{where $X$ is the hydrogen mass fraction, which in this CAMELS simulations is set to $0.76$}. In addition, since the simulations (as detailed below) do not include self-shielding effects for star-forming particles, we manually set $x_{\text{HI}, i} = 1$ for particles with star formation rate larger than zero. {The reason for having a separate star formation rate parameter on top of the star particles is that in the underlying multiphase ISM model, self-shielded gas is represented as a gas element until stochastically converted to a star particle, where the conversion probability depends on the star formation timescale~\citep{Springel_2003}.} This simple and effective prescription, also employed in the post-processing of the CAMELS simulations~\citep{villaescusa-navarro_camels_2022}, assumes that all the star-forming particles are fully self-shielded against ionizing radiation. As shown in ~\citet{villaescusa-navarro_ingredients_2018}, this assumption results in a good match to observational data sets like abundance of HI and column density distribution of Damped Lyman-$\alpha$ systems.
+
+We then use the same CIC procedure described above to interpolate 
+$\mathrm{M}_{\text{HI},i}$ to a continuous mass field, $\mathrm{M}_{\text{HI}}$, after which we divide each voxel by its volume to obtain the density field $\rho_{\mathrm{HI}}$. The 21 cm brightness temperature in the post-reionization universe is given to a good approximation by the following expression in~\citet{villaescusa-navarro_ingredients_2018}:
+\begin{equation}\label{eq:tb}
+    T_b(\bm{x}) = 189\,h\left(\frac{H_0(1+z)^2}{H(z)}\right)\frac{\rho_{\mathrm{HI}}(\bm{x})}{\rho_c} ~[\text{mK}]\, , 
+\end{equation}
+where $H_0$ is the Hubble--Lemaître constant today, $\rho_{\mathrm{HI}}(\bm{x})$ is the interpolated neutral hydrogen density at cell location $\bm{x}$, $z$ is the redshift, $H(z)$ is the Hubble function at redshift $z$, $T_b$ is expressed in mK, and $H_0 = 100\,h$ km/s/Mpc. The quantity $\rho_c = \frac{3H_0^2}{8\pi G}$ denotes the critical density today.
+
+We will work in the plane-parallel approximation and assume the redshift of the box as a constant, given the fact that redshift evolution within the simulated volume would require a realistic set of lightcones mock and this is beyond the scope of the paper.
+Once the maps are created, we smooth them with a Gaussian kernel of fixed radius $R = 0.2 ~\text{Mpc $h$}^{-1}$. This choice balances two considerations: on the one hand, smoothing helps to stabilize training by reducing sharp fluctuations and noise in the target fields; on the other hand, excessive smoothing would wash out the small-scale structures that are physically important for our task. Given that the voxel resolution is $\approx 0.1 \Mpch$, we chose a slightly larger smoothing radius that facilitates improved training of the network while preserving most of the relevant small-scale information.
+
+
+
+
+
+\subsection{Loss function}
+\label{sec:lodi_loss}
+
+When training \LODI, we sample a $21\,\mathrm{cm}$ brightness-temperature map $\tb$ from the training set and apply the forward diffusion process (Eq.~\ref{eq:vdm_forward}), setting $\bm{x}_0 = \tb$ and $\bm{x}_t = \tb^t$. We use $T = 50$ timesteps.
+
+During training, the denoising network predicts the noise by minimizing Eq.~\ref{eq:elbo_decomposition}. For example, following this same convention, the diffusion loss~\ref{eq:vdm_diffusion_loss} gets modified to:
+\begin{equation}
+\label{eq:lodi_loss_diffusion}
+    \mathcal{L}(\bm{T}_b) = \frac{T}{2} \, \mathbb{E}_{\bm{\epsilon} \sim \mathcal{N}(\bm{0},\bm{I}),\, t \sim \mathcal{U}[1,T]}
+    \left[ \bigl(\exp\!\bigl(\gamma(t-1) - \gamma(t)\bigr) - 1\bigr)
+    \left\|\bm{\epsilon} - \hat{\bm{\epsilon}}_{\bm{\theta}}(\tb^t, t)\right\|_2^2 \right],
+\end{equation}
+where the expectation is over the noise distribution and the uniform discrete 
+time distribution.
+
+During generation, we sample from $\tb^T \sim \mathcal{N}(\bm{0},\bm{I})$ and 
+iteratively denoise using the learned distribution 
+$p_{\bm{\theta}}(\tb^{t-1} \mid \tb^t, \rhoDM, t)$ to produce 
+samples $\bm{T}_b^0 \sim p(\bm{T}_b \mid \rhoDM)$. The ancestral sampling (Eq.~\ref{eq:ancestral_sampling}) therefore turns into :
+\begin{equation}
+\label{eq:lodi_ancestral}
+    \bm{T}_b^s = \frac{\alpha_s}{\alpha_t}\left(\tb^t - \sigma_t\,c\,\hat{\bm{\epsilon}}_{\bm{\theta}}(\tb^t, t)\right) 
+    + \sqrt{(1-\alpha_s^2)\,c}\,\bm{\epsilon},
+\end{equation}
+
+
+\subsubsection{Training of \LODI}
+ 
+
+We train \LODI\ on 5 simulations of the CV set from CAMELS, each with a different initial seed. We process the 5 simulations as explained above, and divide them into $32^3$ voxel sub-volumes.
+To enforce rotational equivariance, we augment each simulation cube with all symmetry-equivalent flips and 90° rotations. Training on more simulations is necessary to account for cosmic variance in the large scales comparable to the box size and also to train on more halos of large masses, especially $M_\text{halo}>10^{12}M_\odot$.  This expands the raw training set substantially and would correspondingly increase training time. We therefore apply a targeted sub-sampling strategy: because HI emission is concentrated around dark matter halos --particularly massive ones-- and thus sparse, we preferentially draw sub-volumes that contain objects in the higher–mass halo channels. We define important regions here as regions where $\log \rho_h\geq 10$, since this density value is about $10^3$ times smaller than the minimum density value in our dataset, prior to gaussian smoothing. Values smaller than that are small enough that they do not contribute to any meaningful HI content. To maintain diversity we also include $50\%$ of sub-volumes centered on the more numerous lower-mass halos, the first 2 mass bins in this case. This balanced selection reduces the total training data sets from $\approx$ 410 000 to $\approx$ 250 000, almost halving the  training time without degrading the representativeness of the data, while increases the relative importance of the larger mass halos as it is seen more frequently by the neural network.  We finally create a training and validation split of $75\%$ and $25\%$, respectively.
+
+\section{Generating larger volumes with latent overlap}
 
 \section{Results}
 

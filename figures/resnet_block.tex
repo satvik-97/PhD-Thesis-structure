@@ -1,0 +1,89 @@
+\definecolor{convblue}{HTML}{4A90D9}
+\definecolor{normgreen}{HTML}{5CAA5C}
+\definecolor{actiorange}{HTML}{E8913A}
+\definecolor{projpurple}{HTML}{9B6DB7}
+\definecolor{skipgray}{HTML}{888888}
+
+\begin{tikzpicture}[
+    node distance=0.55cm,
+    >={Stealth[length=2.5mm]},
+    every node/.style={font=\small},
+    op/.style={
+        draw, rounded corners=3pt, minimum width=3.6cm,
+        minimum height=0.6cm, align=center, font=\small\sffamily
+    },
+    conv/.style={op, fill=convblue!20, draw=convblue!70},
+    norm/.style={op, fill=normgreen!20, draw=normgreen!70},
+    act/.style={op, fill=actiorange!20, draw=actiorange!70},
+    proj/.style={op, fill=projpurple!20, draw=projpurple!70},
+    addnode/.style={
+        circle, draw, minimum size=0.55cm,
+        font=\normalsize\bfseries, inner sep=0pt
+    },
+    iolabel/.style={font=\small\sffamily, text=black},
+    annot/.style={font=\scriptsize\sffamily\itshape, text=skipgray},
+]
+
+% ── Input ──
+\node[iolabel] (input) {$\bm{x}$\; {\scriptsize ($C_{\mathrm{in}}$)}};
+
+% ── net1 ──
+\node[norm, below=0.5cm of input] (gn1) {GroupNorm};
+\node[act, below=of gn1] (silu1) {SiLU};
+\node[conv, below=of silu1] (conv1) {Conv3D\; $3^3$\; {\scriptsize ($C_{\mathrm{in}} \!\to\! C_{\mathrm{out}}$)}};
+\node[norm, below=of conv1] (gn2) {GroupNorm};
+\node[act, below=of gn2] (silu2) {SiLU};
+\node[conv, below=of silu2] (conv2) {Conv3D\; $3^3$\; {\scriptsize ($C_{\mathrm{out}} \!\to\! C_{\mathrm{out}}$)}};
+
+% ── time embedding injection ──
+\node[addnode, below=0.55cm of conv2] (add1) {$+$};
+\node[proj, right=1.8cm of add1, minimum width=2.8cm] (cond)
+    {Linear\; {\scriptsize ($C_d \!\to\! C_{\mathrm{out}}$)}};
+\node[iolabel, right=0.4cm of cond] (condlabel) {$\bm{e}_t$};
+
+% ── net2 ──
+\node[norm, below=0.55cm of add1] (gn3) {GroupNorm};
+\node[act, below=of gn3] (silu3) {SiLU};
+\node[conv, below=of silu3] (conv3) {Conv3D\; $3^3$\; {\scriptsize ($C_{\mathrm{out}} \!\to\! C_{\mathrm{out}}$)}};
+\node[conv, below=of silu3] (conv3) {Conv3D\; $3^3$\; {\scriptsize ($C_{\mathrm{out}} \!\to\! C_{\mathrm{out}}$)}\\{\scriptsize\itshape zero-init}};
+
+
+% ── residual addition ──
+\node[addnode, below=0.85cm of conv3] (add2) {$+$};
+
+% ── Output ──
+\node[iolabel, below=0.5cm of add2] (output) {$\bm{x} + \bm{h}$\; {\scriptsize ($C_{\mathrm{out}}$)}};
+
+% ── Main data flow arrows ──
+\draw[->] (input) -- (gn1);
+\draw[->] (gn1) -- (silu1);
+\draw[->] (silu1) -- (conv1);
+\draw[->] (conv1) -- (gn2);
+\draw[->] (gn2) -- (silu2);
+\draw[->] (silu2) -- (conv2);
+\draw[->] (conv2) -- (add1);
+\draw[->] (add1) -- (gn3);
+\draw[->] (gn3) -- (silu3);
+\draw[->] (silu3) -- (conv3);
+\draw[->] (conv3) -- (add2);
+\draw[->] (add2) -- (output);
+
+% ── Time embedding arrow ──
+\draw[->] (condlabel) -- (cond);
+\draw[->] (cond) -- (add1);
+
+% ── Skip / residual connection ──
+\draw[->, thick, color=skipgray, dashed]
+    (input.west) -- ++(-1.5,0) |- (add2.west);
+\node[annot, rotate=90, anchor=south] at ($(input.west)+(-1.7,-4.5)$)
+    {residual\; {\tiny (1$\times$1 conv if $C_{\mathrm{in}} \neq C_{\mathrm{out}}$)}};
+
+% ── Bracket labels for net1 / net2 ──
+\draw[decorate, decoration={brace, amplitude=5pt}, thick, convblue!70]
+    ($(gn1.north east)+(0.25,0.05)$) -- ($(conv2.south east)+(0.25,-0.05)$)
+    node[midway, right=6pt, font=\footnotesize\sffamily, text=convblue!90] {\texttt{net1}};
+\draw[decorate, decoration={brace, amplitude=5pt}, thick, convblue!70]
+    ($(gn3.north east)+(0.25,0.05)$) -- ($(conv3.south east)+(0.25,-0.05)$)
+    node[midway, right=6pt, font=\footnotesize\sffamily, text=convblue!90] {\texttt{net2}};
+
+\end{tikzpicture}

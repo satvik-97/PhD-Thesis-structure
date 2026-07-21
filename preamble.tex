@@ -29,6 +29,8 @@
 \usepackage{physics}             % \grad, \curl, \dd, \abs etc.
 
 % ---- FIGURES & TABLES --------------------------------------
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc, fit, backgrounds, decorations.pathreplacing}
 \usepackage{graphicx}
 \usepackage{caption}
 \usepackage{subcaption}
@@ -109,8 +111,10 @@
 % --- Fields and maps
 \newcommand{\xHI}{x_\mathrm{HI}}
 \newcommand{\Tb}{T_\mathrm{b}}           % brightness temperature
-\newcommand{\rhoDM}{\rho_\mathrm{DM}}
-\newcommand{\rhoHI}{\rho_\mathrm{HI}}
+\newcommand{\rhoDM}{\boldsymbol{\rho}_\mathrm{DM}}
+\newcommand{\rhoh}{\boldsymbol{\rho}_\mathrm{h}}
+\newcommand{\rhoHI}{\boldsymbol{\rho}_\mathrm{HI}}
+\newcommand{\tb}{\bm{T}_b}
 
 % --- Power spectrum
 \newcommand{\Pk}{P(k)}
@@ -128,10 +132,10 @@
 \newcommand{\etal}{et al.\xspace}
 
 % --- Simulation names (consistent formatting)
-\newcommand{\CAMELS}{\textsc{CAMELS}}
-\newcommand{\LODI}{\textsc{LODI}}
-\newcommand{\FOLD}{\textsc{Cosmo-FOLD}}
-\newcommand{\HALOgen}{\textsc{HALOgen}}
+\newcommand{\CAMELS}{\texttt{CAMELS}}
+\newcommand{\LODI}{\texttt{LODI}}
+\newcommand{\FOLD}{\textttt{Cosmo-FOLD}}
+\newcommand{\HALOgen}{\texttt{HALOgen}}
 \newcommand{\TNG}{IllustrisTNG}
 
 % --- Units shorthand
