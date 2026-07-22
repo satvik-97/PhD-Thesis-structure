@@ -8,6 +8,7 @@
 \usepackage[utf8]{inputenc}
 \usepackage{lmodern}
 \usepackage{microtype}           % better kerning and justification
+\usepackage{placeins}            % for \FloatBarrier
 
 % ---- PAGE LAYOUT -------------------------------------------
 \usepackage[
@@ -37,6 +38,7 @@
 \usepackage{booktabs}            % professional tables (\toprule etc.)
 \usepackage{array}
 \usepackage{multirow}
+\usepackage{float}
 \graphicspath{
     {figures/ch1_lodi/}
     {figures/ch2_cosmofold/}
@@ -91,6 +93,7 @@
 
 % ---- ALGORITHMS --------------------------------------------
 \usepackage{algorithm}
+\newcommand{\algorithmautorefname}{algorithm}
 \usepackage{algpseudocode}
 
 % ---- MISC --------------------------------------------------
@@ -134,7 +137,7 @@
 % --- Simulation names (consistent formatting)
 \newcommand{\CAMELS}{\texttt{CAMELS}}
 \newcommand{\LODI}{\texttt{LODI}}
-\newcommand{\FOLD}{\textttt{Cosmo-FOLD}}
+\newcommand{\FOLD}{\texttt{Cosmo-FOLD}}
 \newcommand{\HALOgen}{\texttt{HALOgen}}
 \newcommand{\TNG}{IllustrisTNG}
 

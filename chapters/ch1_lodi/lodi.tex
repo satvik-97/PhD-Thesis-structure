@@ -11,22 +11,40 @@ We use the CAMELS dataset~\citep{villaescusa-navarro_camels_2022}, which is a su
 follow the IllustrisTNG prescriptions. The particles are evolved from a redshift of $z=127$. } 
 
 For this work, we train on the CV set of IllustrisTNG, which contains $256^3$ gas and dark matter particles (which are later subdivided into $256^3$ voxels), all run with the cosmological and astrophysical parameters set to: $\Omega_m=0.3,\sigma_8 = 0.8,A_\text{SN1}=A_\text{SN2}=A_\text{AGN1}=A_\text{AGN2}=1.0$, {Here, $\Omega_m$ denotes the present-day matter density parameter and $\sigma_8$ is the root-mean-square amplitude of linear matter fluctuations on scales of $8h^{-1}$ Mpc. $A_\text{SN1}, A_\text{SN2}$ are the supernova feedback process parameters of the model and $A_\text{AGN1}, A_\text{AGN2}$ are the active galactic nuclei feedback process parameters, with values of 1.0 corresponding to their fiducial calibration in IllustrisTNG.} There are 27 different initial seeds for each of the 27 simulations.
+
+
 \section{LODI pipeline}
-Start explaining the reason for this specific 2 step pipeline
+\section{Methodology}
+\label{methodology}
+In this section, we explain the machine learning technique, the mock datasets used, and the training methods implemented.
+
+Our strategy is the following: starting from a dark matter only map, we use a U-Net architecture to predict the halo map, as described in section~\ref{sec:extract_halos}.
+
+We then use the halo map as input to a variational diffusion model trained to inpaint the HI brightness temperature, as described in section~\ref{sec:paint_HI}.
+
+An overview of the full pipeline is presented in Fig.~\ref{fig:pipeline}.
+
+\begin{figure*}[h!]
+    \centering
+    \includegraphics[width=0.9\linewidth]{chapters/ch1_lodi/Pipeline.png}
+    \caption{An overview of our generative pipeline, starting from dark matter particle distribution as produced by an N-body code to the final 21cm intensity map: in the first step, a ResNet with attention bottleneck (\HALOgen) is used to predict the dark matter halo mass density in four mass channels; subsequently, a variational diffusion model with latent overlap (\LODI) generates the 21 cm brightness temperature map.}
+    \label{fig:pipeline}
+\end{figure*}
 
 \subsection{Extracting halos from DM only sim}
+\label{sec:extract_halos}
 \subsubsection{Halogen: Network architecture}
 
 
-A U-Net, introduced by~\citet{ronneberger_u-net_2015} is a deep hierarchical convolutional neural network with encoder and decoder layers, used to perform image-to-image translation tasks -- an ideal architecture for our aim of predicting halo maps from $\boldsymbol{\rho}_\text{DM}$ maps. 
+A U-Net, introduced by~\citet{ronneberger_u-net_2015} is a deep hierarchical convolutional neural network with encoder and decoder layers, used to perform image-to-image translation tasks an ideal architecture for our aim of predicting halo maps from $\boldsymbol{\rho}_\text{DM}$ maps. 
 
 We use ResNet blocks~\citep{he_deep_2015} as the fundamental blocks for the U-Net architecture, as well as an attention block at the bottleneck motivated by~\citet{petit_u-net_2021}. The attention block enhances the ability of the model to capture and highlight complex structure and long-range dependencies within the data. 
-% \begin{figure*}
-%     \centering
-%     \includegraphics[width=0.6\linewidth]{Unet_dm_to_halo.pdf}
-%     \caption{Overview of the \HALO\ (Halo Assignment and Generation with U-Net) architecture used for halo assignment from an input DM-only map, employing grouped 3D convolutions (gray blocks) and an attention mechanism at the bottleneck. Upsampling is done via trilinear interpolation to avoid artifacts in the upsampled map. Horizontal lines represent skip connections.{The input data has shape of $64^3$ voxels while the bottleneck has a spatial shape of $8^3$.} }
-%     \label{fig:Unethalo}
-% \end{figure*}
+\begin{figure*}
+    \centering
+    \includegraphics[width=0.9\linewidth]{chapters/ch1_lodi/Unet_dm_to_halo.pdf}
+    \caption{Overview of the \HALOgen\ (Halo Assignment and Generation with U-Net) architecture used for halo assignment from an input DM-only map, employing grouped 3D convolutions (gray blocks) and an attention mechanism at the bottleneck. Upsampling is done via trilinear interpolation to avoid artifacts in the upsampled map. Horizontal lines represent skip connections.{The input data has shape of $64^3$ voxels while the bottleneck has a spatial shape of $8^3$.} }
+    \label{fig:Unethalo}
+\end{figure*}
 The architecture, depicted in Fig.~\ref{fig:Unethalo}, consists of 3 encoding blocks with grouped convolutions, which process a 3D $\boldsymbol{\rho}_\text{DM}$ input of size $64^3$ voxels. The input is progressively downsampled through three stages, reaching a bottleneck representation of size of $8^3$ voxels, with $2\times2\times2$ kernel max-pooling layers employed for downsampling to reduce spatial resolution while preserving dominant features. 
 For the up-sampling leg of the architecture, we use trilinear interpolation instead of the more commonly used transposed convolutions to avoid checkered board artifacts grid-like patterns that can arise when upsampling images. Trilinear interpolation estimates voxel values by computing a weighted average of the eight nearest neighbors, ensuring a smoother reconstruction. To enhance high-level feature preservation, we incorporate skip connections (represented as horizontal grey lines in Fig.~\ref{fig:Unethalo}) after upsampling, whose aim is to transfer directly feature maps from corresponding encoder layers to decoder layers, thus bypassing the bottleneck. 
 
@@ -80,13 +98,15 @@ In other words, the threshold eliminates pixels that contain low-density values,
 \end{equation}
 We normalize the mask such that $\displaystyle \sum_{i,k} m_w^{i,k}= 64$, or each training mask of shape $4\times64^3$ adds to 1 on average, since each simulation is made of 64 sub-volumes.
 
+\begin{figure*}[h!]
+    \centering
+    \includegraphics[width=1.0\linewidth]{chapters/ch1_lodi/output1.png}
+    \caption{Illustration of the halo density channels masking prescription. The first row of 4 images shows a 2D slice of the training halo maps $\rho_\text{h}^{(j)}$ for each halo mass channel $j$. The second row shows the corresponding 2D weighted mask maps, $m_w^{j,k}$. In each masking map, the contribution from the halo $j$ is shown in beige, and the contribution from the neighboring channel's halo location is shown in golden.}
+    \label{fig:unet_halo_MASK}
+\end{figure*}
+
 An illustration of the construction of $m_w^{(i,k)}$ is shown in figure~\ref{fig:unet_halo_MASK}. By construction, pixels corresponding to halo sites for channel $j$ (beige) have high mask values; the mask also has large values for adjacent channel's halo positions (golden), in order to enforce the absence of halos there in the particular channel under consideration, since  for these regions, the target voxel value corresponds to the small background values.
-% \begin{figure*}
-%     \centering
-%     \includegraphics[width=1.0\linewidth]{output1.png}
-%     \caption{Illustration of the halo density channels masking prescription. The first row of 4 images shows a 2D slice of the training halo maps $\rho_\text{h}^{(j)}$ for each halo mass channel $j$. The second row shows the corresponding 2D weighted mask maps, $m_w^{j,k}$. In each masking map, the contribution from the halo $j$ is shown in beige, and the contribution from the neighboring channel's halo location is shown in golden.}
-%     \label{fig:unet_halo_MASK}
-% \end{figure*}
+
 
 The masked loss function is then written as:
 \begin{equation} \label{eqn:lossfn}
@@ -129,6 +149,7 @@ We input the $64^3$ voxels $\rhoDM$ field in batches of 16 and apply the loss fu
 
 
 \section{\LODI:Generating 21 cm brightness temperature fields with Latent overlap diffusion}
+\label{sec:paint_HI}
 
 
 
@@ -276,6 +297,13 @@ of~\citet{ono_debiasing_2024} by replacing all 2D grouped convolutions with thei
 3D counterparts and adding an extra convolutional layer to each residual block to
 increase the network's capacity for volumetric data.
 
+\begin{figure*}[h!]
+    \centering
+    \includegraphics[width=0.9\linewidth]{chapters/ch1_lodi/denoise_Unet.png}
+    \caption{The architecture of the denoising model: a 3D U-net with residual network blocks and an attention layer at the bottleneck. The input to the network is the noisy temperature map at time step $t$, the time step embedding and the conditional halo maps. The output is a less noisy version of the temperature map.}
+    \label{fig:DenoiseUnet}
+\end{figure*}
+
 The encoder decoder structure consists of 4 downsampling and 4 upsampling stages,
 each built from residual convolutional blocks with skip connections between
 corresponding encoder and decoder levels. At the bottleneck, we include a
@@ -350,7 +378,7 @@ $\mathrm{M}_{\text{HI},i}$ to a continuous mass field, $\mathrm{M}_{\text{HI}}$,
 \begin{equation}\label{eq:tb}
     T_b(\bm{x}) = 189\,h\left(\frac{H_0(1+z)^2}{H(z)}\right)\frac{\rho_{\mathrm{HI}}(\bm{x})}{\rho_c} ~[\text{mK}]\, , 
 \end{equation}
-where $H_0$ is the Hubble--Lemaître constant today, $\rho_{\mathrm{HI}}(\bm{x})$ is the interpolated neutral hydrogen density at cell location $\bm{x}$, $z$ is the redshift, $H(z)$ is the Hubble function at redshift $z$, $T_b$ is expressed in mK, and $H_0 = 100\,h$ km/s/Mpc. The quantity $\rho_c = \frac{3H_0^2}{8\pi G}$ denotes the critical density today.
+where $H_0$ is the Hubble Lemaître constant today, $\rho_{\mathrm{HI}}(\bm{x})$ is the interpolated neutral hydrogen density at cell location $\bm{x}$, $z$ is the redshift, $H(z)$ is the Hubble function at redshift $z$, $T_b$ is expressed in mK, and $H_0 = 100\,h$ km/s/Mpc. The quantity $\rho_c = \frac{3H_0^2}{8\pi G}$ denotes the critical density today.
 
 We will work in the plane-parallel approximation and assume the redshift of the box as a constant, given the fact that redshift evolution within the simulated volume would require a realistic set of lightcones mock and this is beyond the scope of the paper.
 Once the maps are created, we smooth them with a Gaussian kernel of fixed radius $R = 0.2 ~\text{Mpc $h$}^{-1}$. This choice balances two considerations: on the one hand, smoothing helps to stabilize training by reducing sharp fluctuations and noise in the target fields; on the other hand, excessive smoothing would wash out the small-scale structures that are physically important for our task. Given that the voxel resolution is $\approx 0.1 \Mpch$, we chose a slightly larger smoothing radius that facilitates improved training of the network while preserving most of the relevant small-scale information.
@@ -389,15 +417,205 @@ samples $\bm{T}_b^0 \sim p(\bm{T}_b \mid \rhoDM)$. The ancestral sampling (Eq.~\
  
 
 We train \LODI\ on 5 simulations of the CV set from CAMELS, each with a different initial seed. We process the 5 simulations as explained above, and divide them into $32^3$ voxel sub-volumes.
-To enforce rotational equivariance, we augment each simulation cube with all symmetry-equivalent flips and 90° rotations. Training on more simulations is necessary to account for cosmic variance in the large scales comparable to the box size and also to train on more halos of large masses, especially $M_\text{halo}>10^{12}M_\odot$.  This expands the raw training set substantially and would correspondingly increase training time. We therefore apply a targeted sub-sampling strategy: because HI emission is concentrated around dark matter halos --particularly massive ones-- and thus sparse, we preferentially draw sub-volumes that contain objects in the higher–mass halo channels. We define important regions here as regions where $\log \rho_h\geq 10$, since this density value is about $10^3$ times smaller than the minimum density value in our dataset, prior to gaussian smoothing. Values smaller than that are small enough that they do not contribute to any meaningful HI content. To maintain diversity we also include $50\%$ of sub-volumes centered on the more numerous lower-mass halos, the first 2 mass bins in this case. This balanced selection reduces the total training data sets from $\approx$ 410 000 to $\approx$ 250 000, almost halving the  training time without degrading the representativeness of the data, while increases the relative importance of the larger mass halos as it is seen more frequently by the neural network.  We finally create a training and validation split of $75\%$ and $25\%$, respectively.
+To enforce rotational equivariance, we augment each simulation cube with all symmetry-equivalent flips and 90° rotations. Training on more simulations is necessary to account for cosmic variance in the large scales comparable to the box size and also to train on more halos of large masses, especially $M_\text{halo}>10^{12}M_\odot$. To compress the dynamic range of the sparse HI field, we train the network in 
+logarithmic space of the fields. This expands the raw training set substantially and would correspondingly increase training time. We therefore apply a targeted subsampling strategy: because HI emission is concentrated around dark matter halos particularly massive ones and thus sparse, we preferentially draw subvolumes that contain objects in the higher mass halo channels. We define important regions here as regions where $\log \rho_h\geq 10$, since this density value is about $10^3$ times smaller than the minimum density value in our dataset, prior to gaussian smoothing. Values smaller than that are small enough that they do not contribute to any meaningful HI content. To maintain diversity we also include $50\%$ of sub-volumes centered on the more numerous lower-mass halos, the first 2 mass bins in this case. This balanced selection reduces the total training data sets from $\approx$ 410 000 to $\approx$ 250 000, almost halving the  training time without degrading the representativeness of the data, while increases the relative importance of the larger mass halos as it is seen more frequently by the neural network.  We finally create a training and validation split of $75\%$ and $25\%$, respectively.
+
+
+
+
+
 
 \section{Generating larger volumes with latent overlap}
 
+
+
+\subsection{Generation over larger volumes with latent overlap}
+
+It is not possible to input the entire $25^3(\Mpch)^3$ simulation box, corresponding to $256^3$ voxels to our network, because of memory constraints. Such data cube would require several terabytes of GPU memory to train. Instead, we divide the domain into 512 smaller $32^3$ voxels subvolumes, with the view of generating for each its 21 cm field with the trained the diffusion model, and then combine them at the end to generate the full volume. 
+
+\subsubsection{Latent overlap method}
+The naive solution would be to generate the brightness temperature field in each $32^3$ sub-volume, then tile them to create the target, $256^3$ volume we call this approach `tiling'. However, tiling introduces artificial, periodic discontinuities at the boundaries of each $32^3$ voxel cube, arising because the brightness temperature field $\tb$ is sampled from the conditional distribution  $\tb\sim p(\tb|\rhoh)$, which depends solely on the $32^3$ halo field $\rhoh$, with no reference to adjacent boxes. 
+
+\begin{figure*}[h!]
+   \centering
+   \includegraphics[width=1.0\linewidth]{chapters/ch1_lodi/process_proof_combined.png}
+   \caption{A comparison of different overlapping methods are shown, where the line of discontinuity is vertical and passes through the 2 marked crosses in the images. The left image is the ground truth. The latent overlap method is shown in the left center, compared with two other cases. The center right is the case where for the overlap region, we take the average pixel values of the two boxes and the right image shows the other case when we generate 2 separate boxes and just concatenate them, while keeping the the overlapping pixel region from the first box. The images shown are averaged in the third axis over a distance of about 0.9 $\Mpch$}
+   \label{fig:cont_proof_comp}
+\end{figure*}
+
+To address this, we adapt the inpainting method of ~\citet{lugmayr_repaint_2022}, which in our work we call `latent overlap' approach. 
+The first box, $B_1$, is generated by starting with a Gaussian noise $\boldsymbol{\epsilon_1}$, to obtain a sample $\bm{T}^0_{B_1}$. While generating this box in $T=50$ steps, a set of $T$ intermediate latent maps are produced using Eq.~\eqref{eq:lodi_ancestral}: $[\bm{T}^1_{B_1},\bm{T}^2_{B_1},\dots,\bm{T}^T_{B_1}]$. These intermediate latent images can be interpreted as discrete snapshots of the evolving $\bm{T}_b$  distribution under the diffusion process, forming a trajectory from random noise to the final sampled field. 
+
+When we next consider an adjacent box, $B_2$, we want to enforce that its generation process follow a `similar' trajectory as $B_1$. For this, we partially overlap boxes $B_2$ onto $B_1$ such that
+\[
+\text{Vol}(B_1 \cap B_2) = V_{\text{overlap}}
+\]
+where $V_{\text{overlap}}$ is the overlapping volume and is defined as the fraction of one box (specified below). {For our work, the overlap volume or fraction is specified in section \hyperref[21cm_overlap]{2.4.2}.} Now, at every $t$-th denoising step of $B_2$, we replace $\bm{T}^t_{B_2}$ with the previously-generated $\bm{T}^t_{B_1}$ in the region $V_{\text{overlap}}$, thus obtaining $\bm{T}^{t*}_{B_2}$, which is identical to $\bm{T}^t_{B_1}$ in the overlap volume. This new $\bm{T}^{t*}_{B2}$ is then denoised using the denoising U-net to obtain $\bm{T}^{t-1}_{B_2}$. 
+Mathematically, the updated state of \( B_2 \) at the \(t\)-th denoising step is given by:
+\[
+\bm{T}^{t*}_{B_2} = M_{\text{overlap}} \bm{T}^t_{B_2} + (1 - M_{\text{overlap}}) \bm{T}^t_{B_1} \, ,
+\]
+where \( M_{\text{overlap}} \) is the overlap mask defined as:
+\[
+M_{\text{overlap}}(\bm{x}) =
+\begin{cases} 
+1, & \text{if } \bm{x} \in V_{\text{overlap}} \\
+0, & \text{otherwise}
+\end{cases}
+\]
+and
+\[
+\bm{T}^t_{B_1} = \alpha_t \bm{T}^0_{B_1} + \sigma_t \boldsymbol{\epsilon}, \quad \boldsymbol{\epsilon} \sim \mathcal{N}(\textbf{0}, \textbf{I}) \, ,
+\]
+where $\alpha_i$ and $\sigma_i$ are the noise schedule parameters and are learnt by the diffusion model as explained in section~\ref{sec:vdm_schedule}, and $\bm{T}^0_{B_1}$ was produced by the diffusion model in a previous generative pass.
+
+Performing this latent overlap step ensures that the entire image $\bm{T}^{i*}_{B_2}$ is denoised harmoniously, thereby eliminating boundary artifacts, while producing a non-overlapping region that fits seamlessly with the overlapping region. We carry out this procedure $T$ times, and at each step $B_2$ is pushed closer to the distribution of $B_1$ by forcing it to align with the overlapping region of $B_1$ while moving along the trajectory of $\bm{T}^{i}_{B_1}$. This latent overlap method between boxes $B_1$ and $B_2$ is shown in~\autoref{alg:sample}, while figure \ref{fig:cont_proof_comp} provides a comparison of the results obtained with latent overlap against simple tiling of independent boxes. In principle, as $T$ is increased, the alignment should improve. Figure \ref{fig:algo_proof} shows the diffusion process implementing this algorithm on a 2D patch of overlapping boxes. In this case, the left box has already been produced and does not change throughout the entire process\footnote{Note that left half of the image does not change during the process, despite the misleading impression given by the colorbar boundaries being adjusted from left to right to accommodate the different dynamic range of pixel values.}. We call this approach \LODI, for Latent Overlap Diffusion for Intensity mapping.
+
+\begin{figure*}[h!]
+    \centering
+    \includegraphics[width=1.0\linewidth]{chapters/ch1_lodi/process_proof.png}
+    \caption{Illustration of \LODI, using the latent overlap method: output of the diffusion process at different steps in the denoising process (top row, left to right) when using the latent overlap method on a 2D illustrative slice. At each time step, the left half of the field has already been generated. The bottom row shows the same time steps but with simple tiling and no latent overlap: the discontinuity at the boundary is apparent.}
+    \label{fig:algo_proof}
+\end{figure*}
+
+\begin{algorithm}
+\caption{Latent overlap method}
+\label{alg:sample}
+\begin{algorithmic}[1]
+\State $\bm{T}_{B_2}^T \sim \mathcal{N}(\textbf{0}, \textbf{I})$
+\State $\boldsymbol{\epsilon_{B_1}}\sim \mathcal{N}(\textbf{0}, \textbf{I})$
+\State Calculate $M_{\text{overlap}}$
+\For{$i = T-1, \dots, 0$}
+    \State $ s(i)=(i)$ \textbf{and} $t(i)=i+1$
+    \State $\bm{T}^t_{B_1} = \alpha^t \bm{T}^0_{B_1} + \sigma^t \boldsymbol{\epsilon_{B_1}}$
+    \State $\bm{T}^{t*}_{B_2} = M_{\text{overlap}} \bm{T}^t_{B_2} + (1 - M_{\text{overlap}}) \bm{T}^t_{B_1}$
+    \State $\boldsymbol{\epsilon_2}\sim \mathcal{N}(\textbf{0}, \textbf{I})$
+    \State $\bm{T}_{B_2}^{s} = \frac{\alpha_s}{\alpha_t}\left(\bm{T}_{B_2}^{t*}-\sigma_t c \boldsymbol{\hat{\epsilon}_{\boldsymbol{\theta}}}(\bm{T}_{B_2}^{t*}; t)\right) + \sqrt{(1-\alpha_s^2)c}\boldsymbol{\epsilon_2}$
+    
+\EndFor
+\State \textbf{return} $\bm{T}_{B_2}^0$
+\end{algorithmic}
+\end{algorithm}
+\vspace{\baselineskip}
+
+{\subsubsection{Patching 21 cm fields}}
+\label{21cm_overlap}
+
+To generate the entire $25^3$ $(\Mpch)^3$ volume, we need to define the sequence in which the sub-volumes $B_i$ cubes are processed. Ideally, we aim for an algorithm that enables parallelization of the process, for faster generation, while using the largest possible number of starting sub-volumes (i.e., the ones that are generated conditionally on the learnt diffusion process, but without reference to adjacent regions), because these are the ones that are truly in-distribution w.r.t. to the diffusion generative process.
+
+
+
+
+To execute this, we create a mesh of 125 sub-volumes $B_i$ of size $32^3$ voxels,  equally spaced from each other, arranged in a 3D grid (Stage 1, top panels in Fig.~\ref{fig:overlapping_scheme}, showing from left to right the three orthogonal planes, $X-Y$, $X-Z$, $Y-Z$; maps are averaged along the third axis). In Stage 2, 3 and 4, we generate nearest-neighbor boxes along each of the 3 cartesian direction using the latent generation method with an overlap of $4\times32\times32$ voxels. This greatly reduces the out-of-distribution error, and helps with parallelizing the generation process since most of the boxes can be generated independently of each other. Consequently, the configuration in Stage 4 exhibits an alternating pattern where every other $B_i$ is present along each axis. In each of these 3 stages, 100 new $B_i$s are generated per axis, amounting to 300 new generations in total.
+
+In the subsequent Stages $(5,6~\text{and}~ 7)$, additional sub-volumes are generated adjacent to the ones generated in stages 2,3 and 4 along the cartesian axes, overlapping with the original sub-volume with the same overlap fraction of $4\times32\times32$. This procedure is performed sequentially for the 3 cartesian directions, requiring 80 cubes per axis (240 in total). Finally, the remaining 64 sub-volumes are generated at stage 8, each of which overlaps with the neighboring 6 voxels with the same overlap volume of $4\times32\times32$ to complete the configuration, resulting in a final assembly of 729 $B_i$s arranged in a $9 \times 9\times 9$ grid resulting in a total volume of $25$ $\left(\Mpch\right)^3$. This boosts the speed of generation by a factor of $\approx$6, compared to generating sub-volumes sequentially. In principle we could further parallelize the generation process by combining the different stages into one, but this is limited by the available GPU memory.
+
+\begin{figure*}[h!]
+    \centering
+    \includegraphics[width=0.55\linewidth]{chapters/ch1_lodi/all_stage.png}
+    \caption{Assembly of the full volume cube of voxel size $256^3$ from $9 \times 9 \times 9$ sub-volumes using the latent overlap method, for a simulation from the validation set. Each row corresponds to a different stage (top to bottom) of the latent generation process and each column displays one of the three orthogonal 3D cartesian planes of the simulation volume ({the maps are shown by projecting along the third  spatial axis across the full $25 \Mpch$ extent of the simulation box}). Although the figure displays six rows, the complete process consists of eight sequential steps. The fifth row represents the net result of three consecutive sub-steps, which have been aggregated for clarity.     \label{fig:overlapping_scheme}}
+\end{figure*}
+
+
+\begin{figure*}[h!]
+    \centering
+    \includegraphics[width=0.8\linewidth]{chapters/ch1_lodi/combined_2x2.png}
+    \caption{Top left: The dark matter density map, not seen during training, used as input for the generative pipeline. Top right: the ground truth (target) HI brightness temperature map from the simulation. Bottom left: The generated output using the Tiling method, with green markers highlighting the sub-volumes boundaries where discontinuities arise. Bottom right: brightness temperature map generated using the latent overlap method of \LODI, which significantly reduces the discontinuities seen in the tiling approach. The brightness temperature map is conditioned on the output provided by \HALOgen. All the maps are shown by projecting along the third  spatial axis across the full $25 \Mpch$ extent of the simulation box.}
+    \label{fig:overall_output}
+\end{figure*}
+
+
+The overall output of our generative pipeline is shown in Fig.~\ref{fig:overall_output}. We start with an unseen  dark matter density field, shown in the top left panel, run it through \HALOgen\ (whose intermediate halo mass density maps are shown in the second column of figure~\ref{fig:Halo_finding}), and then produce the brightness temperature map with \LODI\ (bottom right panel of Fig.~\ref{fig:overall_output}). Using the naive Tiling approach (bottom left panel of Fig.~\ref{fig:overall_output}), the discontinuity between training sub-volumes is evident (corners of boundaries are indicated by green crosses for better visualization).
+
+
+
+
+
+
+
+
+
 \section{Results}
+\label{results}
+In this section, we demonstrate the performance of the entire generative pipeline, producing HI intensity maps from previously unseen dark matter simulation maps. We validate our results using the CV set of the IllustrisTNG simulations at $z=0$, with the same parameters for the simulations as the training maps, but with different initial seeds. We postpone the study of generalization capabilities to other cosmologies to a future, dedicated work. 
 
-\subsection{Halo prediction}
-Show halo ouptut for test sim on camels
-\subsection{Generating 21 cm maps}
-Show the combination of results using the pipeline
+\subsection{Performance of \HALOgen }
+The output of \HALOgen is shown in figure~\ref{fig:Halo_finding}, split in the four mass channels (top to bottom), with the input dark matter map shown on the top left of figure~\ref{fig:overall_output}. We reiterate that this input map was unseen during training, as it was generated with a different seed (but same cosmological and astrophysical parameters as the training map). 
+
+Visually, the predicted pixel values for the halo mass density (left column) look very close to the target maps (center column), except for the smallest mass range (first row). This can be more precisely quantified by comparing the distribution of log-density values between the target and predicted $25^3$ $\left(\Mpch\right)^3$ box (right column). While we observe a consistent under-prediction in the mean value of the smallest halo mass range (albeit still within the $16-84$ percentile band), the agreement for the other mass ranges is excellent. We trace back the relatively poorer performance for the smallest mass halo density to our definition of masked loss: as discussed above, a lower weight is given to pixels of the smallest halos, since they are the most abundant ones. Therefore, we can expect that the loss function puts greater attention to faithfully reconstructing the density of larger mass halos. We plot the median instead of the mean since in the post-processing of the output halo maps, we set pixel values below a threshold of $\log\rho_h = 9.5$ to zero, which in the pixel comparison plot skews the mean value of the pixel distribution. The median values are agnostic to these outlier near zero values. The reason for setting this cutoff is because such low predicted values are not possible given the training data and lie below the lower density limit.
+
+\begin{figure*}[h!]
+    \centering
+    \includegraphics[width=0.85\linewidth]{chapters/ch1_lodi/my_figure_combined.png}
+    \caption{
+    Output of \HALOgen\ from a previously unseen dark matter simulation.  The rows show the comparison between the target (left) and predicted (center) halo mass density maps for each of the four mass channels (top to bottom). {The halo maps are visualized by projecting along the third spatial axis across the entire $25 \Mpch$ of the simulation.} The right column gives a pixel-wise comparison between the distribution of log-densities for the target and predicted map, with the mean and 1$\sigma$ band computed from {the $256^3$ voxels}.}
+    \label{fig:Halo_finding}
+\end{figure*}
+
+\subsection{Performance of  \LODI}
+
+We define the dimensionless brightness-temperature field by normalizing each spatial point by its global mean:
+\begin{equation}
+  \hat{T}_b(\bm{x}) = \frac{T_b(\bm{x})}{\langle T_b \rangle}\,.
+\end{equation}
+The dimensionless power spectrum is accordingly defined as:
+\begin{equation}
+  P_{\hat{T}_b}(k) = \left\langle \hat{T}_b(\bm{k}) \cdot \hat{T}_b^{*}(\bm{k}) \right\rangle\,,
+\end{equation}
+where $\hat{T}_b(\bm{k})$ is the Fourier transform of $\hat{T}_b(\bm{x})$ and 
+$k = |\bm{k}|$. This dimensionless formulation allows direct comparison of small-scale fluctuations across different simulations.
+
+To assess the performance of \LODI, we compute the $21\,\mathrm{cm}$ power spectrum produced by our pipeline and compare it to the ground truth via the residual:
+\begin{equation}
+  \Delta P_{\hat{T}_b}(k) = P_{\hat{T}_b}^{\mathrm{gen}}(k) - P_{\hat{T}_b}^{\mathrm{true}}(k)\,,
+\end{equation}
+where $P_{\hat{T}_b}^{\mathrm{gen}}(k)$ and $P_{\hat{T}_b}^{\mathrm{true}}(k)$ 
+denote the \LODI-generated and ground-truth simulation power spectra, 
+respectively. Since the diffusion model was trained on Gaussian smoothed maps, the comparison plots and power spectra calculations are also done by Gaussian smoothing the ground truth maps with the same filter radius of $R = 0.2 ~\Mpch$. Note that when testing our model, we compare against maps that include HI from all the halos across the full halo-HI mass range. This allows us to verify
+that the specific halo-mass threshold used during training does not
+significantly affect the recovered $21\,\mathrm{cm}$ signal.
+
+Figure~\ref{fig:pk_dif_many} illustrates the end to end performance by showing the residual power spectrum obtained by applying the whole pipeline on 7 previously unseen dark matter density fields (i.e., with different initial seeds). For each of the 7 dark matter fields, we first produce the halo maps for each using \HALOgen, and then generate 5 realizations of brightness temperature maps.
+
+In Figure~\ref{fig:pk_same_many}, we present an example $T_b$ map generated using the full pipeline, alongside its corresponding ground-truth map, unseen before during training, each averaged along the 
+third axis. We also plot the dimensional power spectrum $P_{\hat{T}_b}$, computed from 20 \LODI\ realizations conditioned on the same halo maps produced by \HALOgen. Visually, the generated and true maps show considerable matching, and the power spectra remain in good agreement up to $k \simeq 10\hMpci$, as can also been seen in the residual values shown in the bottom panel. This result showcases the intrinsic variance of the generative model \LODI, as seen in the spread of the power spectra residuals. At high wavenumbers the predicted power spectrum exhibits excess power relative to the truth. This arises because the generated 21 cm maps display more compact radial profiles than the true maps, which are comparatively more extended and diffuse. Since \LODI is conditioned on halo maps only, the network tends to concentrate 21 cm emission within halo regions, producing higher central intensities and a steeper radial decline. This enhanced contrast amplifies small-scale variance and leads to the observed excess power at higher wave modes.
 
 
+
+
+ \begin{figure*}[h!]
+    \centering
+    \includegraphics[width=1.0\linewidth]{chapters/ch1_lodi/Tb_from_target_from_gen_12.png}
+    \hspace*{-1cm}\includegraphics[width=0.7\linewidth]{chapters/ch1_lodi/pk_multi_combined.png}
+    \caption{Generation of brightness temperature maps with \LODI:  one sample of  diffusion-generated map (top left) compared to the unseen ground truth (top right) visualized by averaging over the third spatial axis, along the entire $25 \Mpch$ length of the simulation box. The bottom panel compares the mean power spectrum and its standard deviation obtained from 20 diffusion realizations, each produced with a different seed for the diffusion model, showing good agreement well into the non-linear regime, up to scales $k \simeq 10\hMpci$, also visible in the residual spectra shown in the bottom panel. The maps are smoothed with a Gaussian kernel of radius of $0.2\Mpch$.}
+    \label{fig:pk_same_many}
+\end{figure*}
+
+
+ \begin{figure*}[h!]
+    \centering
+    \includegraphics[width=0.9\linewidth]{chapters/ch1_lodi/pk_diff_many_blocked.png}
+    \caption{Top: mean (lines) and standard deviation (shaded bands) of the residual of $P_{\hat{T}_b}(k)$ power spectrum for 7 dark matter simulations (each colour a different seed), with 5 diffusion realizations each. The bottom plot shows the result when combining all the realizations.
+    }
+    \label{fig:pk_dif_many}
+\end{figure*}
+
+To generate these results, \HALOgen~was trained for about 21 hours on a single A100 GPU. The training of \LODI\ took  600,000 iterations, using a batch size of 16. The total training time was around 30 hours, using a single A100 GPU. 
+
+When generating, the total time taken by the pipeline to produce one temperature map for the whole $256^3$ volume starting from the dark matter field is 106 seconds (16 seconds for \HALOgen, 90 seconds for \HALOgen). 
+
+
+
+
+\section{Conclusions}
+\label{conclusions}
+In this work, we presented a two-steps generative pipeline to generate and inpaint large, 3 dimensional 21 cm intensity maps, starting from dark matter only simulations. Although this work applied the method to  25$^3$ $\left(\Mpch\right)^3$ simulations, it can be extended to inpaint simulations of any size, provided the resolution is the same as the training set simulation. In the first step, the \HALOgen\  algorithm uses a U-Net to produce high-fidelity halo maps, subdivided in mass channels (bins); in the second step, \LODI\ uses a conditional variational diffusion model coupled with a latent overlap method to paint the 21 cm signal on top of the halo field. We also developed a method to parallelize the generation of sub-volumes of intensity maps coherently into a larger volume simulation, without having to modify the diffusion model. Thus, this method is agnostic to the type of diffusion model used. A more powerful and general method is being investigated and will be demonstrated in a dedicated future work.
+
+To create the halo maps, we use an attention ResUnet along with a weighted masking technique, to enforce halo separation based on halo mass. In this work, we create 4 halo maps from a single dark matter density field, which we then use as a conditional in our diffusion model -- a variational diffusion model that learns to denoise a Gaussian field, conditioned on the 4 halo maps, to produce the 21 cm intensity maps at redshift $z=0$. 
+
+The pipeline produces statistically unbiased estimates of the 21 cm power spectrum, and achieves a $\leq 10\%$ accuracy on average, up to $k \simeq 10\,\it{h} ~\text{Mpc}^{-1}$, as can be seen in figure~\ref{fig:pk_dif_many}. We test the model on multiple unseen simulations, with different initial seeds, showcasing the robustness of the model to capture and reproduce features well into the non-linear small-scale regime.
+\vspace{\baselineskip}
+
+% Although the model performs well on simulations that share the same redshift, cosmology, and astrophysical prescriptions, it is essential to test its ability to generalize across various cosmological parameters and redshift. Such a robust model would enable parameter inference and simulation-based, likelihood-free analyses, and would allow us to build full past-light-cone mocks, that could be compared with data, potentially increasing the information retrieval many-folds compared with simpler (and lossy) summary statistics, like the power spectrum. In addition, forthcoming large-volume HI surveys will enable high-signal-to-noise cross-correlations between 21 cm intensity maps and galaxy catalogs ~\citep{Cunnington:2022}, an approach that mitigates foreground systematics and can tighten constraints on both cosmology and galaxy astrophysics. Our pipeline can therefore be extended to produce realistic HI mocks for these surveys, providing a test-bed for cross-correlation analyses and improved joint constraints on cosmological and astrophysical parameters. We also foresee to extend the pipeline presented here by coupling $\HALO$ and $\LODI$ with \texttt{JERALD}, a Lagrangian deep learning method that produces high-resolution dark matter, stellar mass and neutral hydrogen maps from lower-resolution approximate N-body simulations~\citep{JERALD}, thereby further accelerating the end-to-end analysis. 
+
+% Furthermore, it will be interesting to investigate adapting the diffusion model to cope with realistic foregrounds and instrumental nuisances (like the role of the beam, wedge reconstruction, etc.), both in terms of cross-correlation with galaxies and auto-correlation of the 21 cm brightness temperature. Finally, from the fundamental physics perspective, the excellent performance of \LODI\ even at very small scales makes it an ideal tool to explore non-standard dark matter scenarios, in which the dark matter could have thermal velocities or interactions with baryons and radiation. 
