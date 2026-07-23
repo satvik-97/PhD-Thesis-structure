@@ -95,7 +95,7 @@
 \usepackage{algorithm}
 \newcommand{\algorithmautorefname}{algorithm}
 \usepackage{algpseudocode}
-
+\usepackage{rotating}
 % ---- MISC --------------------------------------------------
 \usepackage{lipsum}              % placeholder text — remove when done
 \usepackage{todo}                % \todo{} notes — remove before submission
@@ -135,11 +135,22 @@
 \newcommand{\etal}{et al.\xspace}
 
 % --- Simulation names (consistent formatting)
-\newcommand{\CAMELS}{\texttt{CAMELS}}
-\newcommand{\LODI}{\texttt{LODI}}
-\newcommand{\FOLD}{\texttt{Cosmo-FOLD}}
-\newcommand{\HALOgen}{\texttt{HALOgen}}
-\newcommand{\TNG}{IllustrisTNG}
+\newcommand{\CAMELS}{\texttt{CAMELS }}
+\newcommand{\LODI}{\texttt{LODI }}
+\newcommand{\FOLD}{\texttt{Cosmo-FOLD }}
+\newcommand{\FOLDpos}{\texttt{Cosmo-FOLD+pos} }
+\newcommand{\HALOgen}{\texttt{HALOgen }}
+\newcommand{\TNG}{IllustrisTNG }
+\newcommand{\cfield}{\xi} %conditioning field
+\newcommand{\ofield}{\eta} %output field 
+\newcommand{\NNpars}{\boldsymbol{\phi}} %NN parameters 
+\newcommand{\et}{\bm{\tau}^t}
+\newcommand{\Tg}{\bm{T}_g }
+\newcommand{\Star}{\bm{\rho}_\text{star} }
+\newcommand{\unitymat}{\mathbb{I}}
+\newcommand{\pos}{\textbf{p}(\textbf{x})}
+\newcommand{\field}[3]{#1, #2 Mpc $h^{-1}$, #3$^3$} 
+
 
 % --- Units shorthand
 \newcommand{\Mpch}{\,h^{-1}\,\mathrm{Mpc}}

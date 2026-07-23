@@ -7,10 +7,14 @@
 \section{Problem statement}
 Tell why we need to have the modeling of the HI signal and what has been done in the past in this domain.
 \section{Data and simulations}
-We use the CAMELS dataset~\citep{villaescusa-navarro_camels_2022}, which is a suite of hydrodynamical simulations created by varying cosmological and astrophysical parameters, along with different initial seeds. This is especially useful to test the generalization performance of the model trained on 3D cosmological dark matter density and brightness temperature maps. {Each simulation box has a comoving side of length $25h^{-1}$ Mpc and contains $256^3$ gas cells and $256^3$ dark matter particles. CAMELS is based on the AREPO~\citep{weinberger_arepo_2020} and GIZMO~\citep{Hopkins_2015_GIZMO} codes and run the same subgrid physics and feedback effects of IllustrisTNG and SIMBA simulations respectively. The hydrodynamics is evolved with the moving-mesh code AREPO  which combines a TreePM gravity solver with a finite-volume Godunov scheme on an unstructured Voronoi mesh. Gas cells above a density threshold are treated with the  multiphase star-formation model of \citet{Springel_2003}. Stellar winds and black-hole seeding/growth with AGN feedback
-follow the IllustrisTNG prescriptions. The particles are evolved from a redshift of $z=127$. } 
+\label{sec:dataset_camels}
+For this work, we use the CAMELS--IllustrisTNG suite of cosmological 
+simulations~\citep{villaescusa-navarro_camels_2022}, which are created by varying cosmological parameters ($\Omega_m$ and $\sigma_8$) and astrophysical parameters (supernova and AGN feedback) across different realizations. Specifically, $A_{\mathrm{SN1}}$ and $A_{\mathrm{SN2}}$ are normalization factors for the energy and speed of galactic wind feedback, respectively; $A_{\mathrm{AGN1}}$ and $A_{\mathrm{AGN2}}$ control the energy output and specific energy of AGN feedback. These simulations are run using the moving-mesh hydrodynamics code AREPO~\citep{weinberger_arepo_2020}, which combines a TreePM gravity solver with a finite-volume Godunov scheme on an unstructured Voronoi mesh. Stellar feedback follows the IllustrisTNG rescriptions~\citep{pillars_of_the_storm}, and particles are evolved from $z=127$.
 
-For this work, we train on the CV set of IllustrisTNG, which contains $256^3$ gas and dark matter particles (which are later subdivided into $256^3$ voxels), all run with the cosmological and astrophysical parameters set to: $\Omega_m=0.3,\sigma_8 = 0.8,A_\text{SN1}=A_\text{SN2}=A_\text{AGN1}=A_\text{AGN2}=1.0$, {Here, $\Omega_m$ denotes the present-day matter density parameter and $\sigma_8$ is the root-mean-square amplitude of linear matter fluctuations on scales of $8h^{-1}$ Mpc. $A_\text{SN1}, A_\text{SN2}$ are the supernova feedback process parameters of the model and $A_\text{AGN1}, A_\text{AGN2}$ are the active galactic nuclei feedback process parameters, with values of 1.0 corresponding to their fiducial calibration in IllustrisTNG.} There are 27 different initial seeds for each of the 27 simulations.
+For our work, we train on the Cosmic Variance (CV) set of IllustrisTNG 
+realizations, comprising 27 simulations with identical cosmology and 
+astrophysics but different initial conditions. Each simulation box has a 
+comoving side length of $25\,h^{-1}\,\mathrm{Mpc}$ with $256^3$ gas and dark matter particles. We use the fiducial IllustrisTNG model: $\Omega_m = 0.3089$, $\sigma_8 = 0.8159$, and all four astrophysical parameters (collectively denoted as $\mathbf{A}$) set to their standard values of 1.0. This choice allows us to test generalization across different initial seeds while keeping cosmology and astrophysics fixed. Here, $\Omega_m$ denotes the present-day matter density parameter, and $\sigma_8$ is the root-mean-square amplitude of linear matter fluctuations on scales of $8\,h^{-1}\,\mathrm{Mpc}$.
 
 
 \section{LODI pipeline}
@@ -315,7 +319,7 @@ Fig.~\ref{fig:DenoiseUnet}, while the layout of a residual block is depicted in 
     \text{SiLU}(\bm{x}) = \bm{x} \odot \sigma(\bm{x}) = \frac{\bm{x}}{1 + e^{-\bm{x}}},
     \label{eq:silu}
 \end{equation}
-where $\odot$ denotes element wise multiplication. The \texttt{net1} first extracts features from input vector $\bm{x}$, to which the time step embedding $\bm{e}_t$ is added via a learned linear projection so that the dimension of $\bm{e}_t$ matches with the extracted features. After this, a zero initialized convolution layer mixes this quantity. The final vector $\bm{h}$ produced is added to the input $\bm{x}$ and passed on to a downsampling block that reduces the spatial dimensionality of the output by 2 in each of the three axes.
+where $\odot$ denotes element wise multiplication. The \texttt{net1} first extracts features from input vector $\bm{x}$, to which the time step embedding $\et$ is added via a learned linear projection so that the dimension of $\et$ matches with the extracted features. After this, a zero initialized convolution layer mixes this quantity. The final vector $\bm{h}$ produced is added to the input $\bm{x}$ and passed on to a downsampling block that reduces the spatial dimensionality of the output by 2 in each of the three axes.
 
 Note that we use group normalization instead of the more commonly used batch normalization. The reason is because our batches(number of training samples the gradient descent algorithm averages over per step) are quite small, and batch normalization can get quite noisy with low batch sizes. 
 
@@ -324,7 +328,7 @@ Note that we use group normalization instead of the more commonly used batch nor
     \input{figures/resnet_block.tex}
     \caption{Architecture of a single residual block. The block consists of two
     sub-networks (\texttt{net1} and \texttt{net2}), with the time-step embedding
-    $\bm{e}_t$ injected additively between them via a learned linear projection.
+    $\et$ injected additively between them via a learned linear projection.
     A residual skip connection (dashed) bypasses the main path; when the input and
     output channel dimensions differ, a $1\times1$ convolution is applied along the
     skip path. The final convolution in \texttt{net2} is zero-initialized so that
@@ -336,11 +340,11 @@ Note that we use group normalization instead of the more commonly used batch nor
 
 The network receives three inputs at every reverse step: the noised field
 $\bm{z}_t$, the conditioning field $\bm{x}_{\mathrm{cond}}$ (concatenated
-channel-wise with $\bm{z}_t$), and a sinusoidal time-step embedding $\bm{e}_t$
+channel-wise with $\bm{z}_t$), and a sinusoidal time-step embedding $\et$
 that informs the network of the current noise level. The embedding is defined as
 \begin{equation}
 \begin{aligned}
-    \bm{e}_t
+    \et
     &= \bigl(\sin(\tilde{t}\,\boldsymbol{\omega}),\;
               \cos(\tilde{t}\,\boldsymbol{\omega})\bigr),
     \qquad \tilde{t}=1000\,t,\quad t\in[0,1], \\

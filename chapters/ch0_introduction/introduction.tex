@@ -69,13 +69,7 @@ which for present-day $\Lambda$CDM parameters occurs at $k_\text{NL}\sim0.2\,h/\
     (2\pi)^3 B(k_1,k_2,k_3)\,\delta_\text{D}^3(\bm{k}_1+\bm{k}_2+\bm{k}_3) = \langle\delta(\bm{k}_1)\delta(\bm{k}_2)\delta(\bm{k}_3)\rangle,
 \end{equation}
 which vanishes identically for a Gaussian field but carries additional, independent cosmological information once gravitational (and, for baryonic tracers, astrophysical feedback) non-linearities are significant~\citep[e.g.][]{Sefusatti_2006}. Standard cosmological perturbation theory can, in principle, extend the analytic description into this regime order-by-order (e.g.\ at ``1-loop'' order), but the required loop integrals grow rapidly in complexity, and even at next-to-leading order the perturbative bispectrum already departs from full $N$-body results by an order of magnitude on the mildly non-linear scales relevant to this work~\citep[e.g.][]{Chudaykin_2020}. This breakdown of analytic and perturbative methods precisely on the scales that carry the most cosmological information is the central motivation, throughout this thesis, for turning to machine-learning-based, field-level approaches instead.
-%   - END NEW 2                                                       
 
-%   - NEW 3: "LSS for cosmological parameter inference (SOTA)" subsection   -
-% Added per supervisor's note: "Cosmological context covers LSS for
-% inference on parameters (SOTA)". This is a review-style subsection
-% surveying HOW LSS is actually used to constrain (\Om, \sige) etc.,
-% not the structure-formation physics (that's covered above).
 
 \subsection{Large-scale structure for cosmological parameter inference}
 \label{sec:lss_param_inference}
@@ -101,10 +95,7 @@ This same bottleneck also constrains theoretical modeling of the 21 cm signal it
 
 In recent years, machine learning techniques, and in particular generative models, have emerged as powerful emulators to reproduce cosmological and astrophysical fields~\citep{perraudin2019cosmologicalnbodysimulationschallenge,Li_2021,jamieson_field-level_2023,Rigo_2025,hassan_hiflow_2022,andrianomena_emulating_2022,sharma25,bernardini2025ember2,andrianomena2024cosmologicalmultifieldemulator}. Among them, \emph{diffusion models} have emerged as the current state of the art for high-fidelity generative modeling, and are the central tool used throughout this thesis. Given their importance to everything that follows, we introduce them here in some detail.
 
-%   - NEW 4: "An Introduction to Diffusion Models" pedagogical subsection   -
-% Added per supervisor's note: ML part needs "a clear, thorough and
-% accessible introduction to diffusion". This is deliberately written to
-% be readable by a committee member outside the ML subfield.
+
 
 \subsection{An introduction to diffusion models}
 \label{sec:diffusion_intro}
