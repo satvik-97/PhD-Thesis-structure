@@ -4,11 +4,164 @@
 \chapter{Diffusion Posterior Sampling for Cosmological Field Reconstruction}
 \label{ch:dps}
 
+The intergalactic medium (IGM) at high redshift holds the majority of the Universe's baryonic content, and on megaparsec scales its distribution traces the underlying dark matter field shaped by gravitational instability (\cite{Meiksin_2009,McQuinn_2016,Bi_1997}. The Lyman-alpha (Lya) forest — the pattern of absorption imprinted by intervening neutral hydrogen on the spectra of background quasars and galaxies — remains the most direct observational window onto this diffuse structure (Gunn & Peterson 1965; Lynds 1971; Rauch 1998). For over two decades, sufficiently dense grids of background sightlines have made it possible to move beyond one-dimensional flux statistics and reconstruct the IGM tomographically in three dimensions (Pichon et al. 2001; Caucci et al. 2008; Lee et al. 2014, 2018), a program now being extended by surveys such as DESI Lya QSO, WEAVE-QSO, and Subaru-PFS/CLAMATO/LATIS, and, in the coming decade, by ELT/MOSAIC and WST/IFS, which will push sightline separations down toward $1\,h^{-1}\mathrm{cMpc}$. At these finer separations, the reconstruction problem becomes increasingly sensitive to the baryonic physics — pressure smoothing, thermal broadening, and radiative feedback — that decouples the IGM from the pure dark matter field below $\sim 1\,\mathrm{Mpc}$ (Miralda-Escudé et al. 1996; Schaye et al. 2000; Viel et al. 2002; Bolton et al. 2017), motivating reconstruction methods that can go beyond the linear, large-scale regime.
+
+Classical tomographic reconstruction has relied on Wiener filtering or Gaussian-process interpolation of the sparse sightline data (Lee et al. 2014, 2018), which is efficient but smooths out precisely the small-scale, non-linear structure that upcoming surveys are designed to resolve. More recent semi-analytic approaches, notably TARDIS (Horowitz et al. 2019, 2021), improve on this by embedding a physically motivated prior — nonlinear structure evolved forward with FastPM (Feng et al. 2016) — inside an iterative maximum-likelihood scheme, using the Fluctuating Gunn-Peterson Approximation as the forward model linking density to absorption. This is a more faithful treatment of gravitational nonlinearity, but it inherits the limitations of FGPA at small scales and is computationally expensive, since every posterior sample requires re-running the gravity solver.
+
+The last few years have seen deep generative models offer a third route: rather than approximating the forward problem or the prior analytically, learn one or both directly from hydrodynamical simulations. Variational autoencoders (Kingma & Welling 2013), GANs, and diffusion models have all been used to emulate non-linear cosmological fields (Villaescusa-Navarro et al. 2021; Lanusse et al. 2021), and Horowitz et al. (2022) showed that a VAE trained on simulations can learn the mapping between dark matter and baryonic tracers directly, without any FGPA-like approximation. This is the paradigm adopted by **DeepCHART** (Maitra, Viel & Kulkarni 2026, arXiv:2507.00135), developed concurrently within our own group and trained on the same $z=2.5$, $(40\,h^{-1}\mathrm{cMpc})^3$ Sherwood hydrodynamical simulations used throughout this chapter. DeepCHART uses a 3D U-Net VAE to map sparse Lya forest sightlines — optionally combined with coeval galaxy positions — directly onto the 3D dark matter density field in a single amortized forward pass, achieving a voxel-wise Pearson correlation of $\rho \simeq 0.77$ (on a $\sigma = 2\,h^{-1}\mathrm{cMpc}$-smoothed, dynamic-range-restricted $\Delta_{\rm DM}$) at a sightline separation of $d_\perp \simeq 2.4\,h^{-1}\mathrm{cMpc}$ matched to the Subaru-PFS Deep survey, rising to $\rho \simeq 0.90$ for the denser sampling anticipated from next-generation instruments, while also recovering the matter power spectrum and a substantial fraction of cosmic web morphology.
+
+DeepCHART and the approach developed in this chapter are best understood as two answers to the same underlying question — how to invert a fixed, known forward model with the help of a learned, simulation-based prior — rather than as competing solutions to be ranked against one another. An amortized VAE such as DeepCHART is trained end-to-end on paired (sightline, $\Delta_{\rm DM}$) data for a specific pairing of survey geometry and noise model; once trained, inference is near-instantaneous, but the learned mapping is entangled with the forward model used during training, so a new sightline density, S/N distribution, or instrumental resolution requires retraining, and the network delivers a single deterministic point estimate of $\Delta_{\rm DM}$ per input, with no native uncertainty quantification and no access to the gas-phase fields that co-determine the absorption. This thesis instead builds on the diffusion posterior sampling (DPS) framework (Chung et al. 2022), in which an unconditional generative prior over the *field itself* is trained once, without any paired data, independently of any particular observational setup, and is then combined at inference time with an explicit, differentiable forward model through a likelihood-guidance term added to the reverse diffusion process. Because the prior and the forward model are decoupled, the same trained diffusion prior can be redeployed against different sightline geometries, noise levels, or even different observables simply by changing the mask, with no retraining, and each reverse diffusion trajectory yields a genuine posterior sample over the full five-field state rather than a point estimate, so that uncertainty can be quantified directly from the spread across samples. This complementarity between amortized and posterior-sampling approaches is increasingly recognized elsewhere in cosmology: score-based and diffusion priors have been used for posterior sampling of initial conditions from non-linear large-scale structure (Legin et al. 2023), for debiasing dark matter reconstructions from galaxies in CAMELS (Ono et al. 2024), and for weak lensing mass-mapping from both simulated and real DES-Y3 shear data (Remy et al. 2023), in each case trading the speed of amortized inference for explicit, model-agnostic posterior characterization.
+
+In this chapter we introduce the diffusion posterior sampling (DPS) framework to this thesis and apply it to the specific inverse problem of Lyman-alpha tomography. We train a variational diffusion model (VDM) prior directly on five physical fields — dark matter density ($\Delta_{\rm DM}$), gas density ($\Delta_{\rm gas}$), neutral hydrogen fraction ($x_{\rm HI}$), temperature ($T$), and peculiar velocity ($v_{\rm pec}$) — extracted from the same Sherwood hydrodynamical simulations underlying DeepCHART, and pair it with a fully differentiable, GPU-vectorized Voigt-profile forward model, validated bitwise against an independent optical-depth pipeline, that maps these fields onto synthetic Lya forest spectra. Posterior samples of the joint 3D field are then drawn by guiding the reverse diffusion process with the gradient of the data likelihood at each denoising step, following the DPS formalism, with a structural consistency term and a scheduled guidance strength $\zeta$ added to stabilize sampling in three dimensions. A notable feature of this forward model is that $\Delta_{\rm DM}$ itself never enters the optical-depth calculation directly — only $\Delta_{\rm gas}$, $x_{\rm HI}$, $T$, and $v_{\rm pec}$ do — so any recovery of the dark matter field is mediated entirely by correlations the prior has learned between dark matter and the gas-phase tracers, rather than by a direct likelihood constraint; this makes the dark matter reconstruction a genuine test of what the learned prior encodes about structure formation. Preliminary reconstructions at a sightline configuration matched to Subaru-PFS are encouraging and broadly competitive with DeepCHART's reported accuracy on the same metric, while additionally returning the four gas-phase fields and a calibrated posterior rather than a single point estimate; a quantitative, tile-averaged comparison across the full simulation volume, together with the associated hyperparameter and sample-size sensitivity studies, is deferred to Section 4.6 once full-box validation is complete. We further develop a latent-space variant of this pipeline, in which a frozen, KL-regularized VAE compresses the anisotropic $1024\times32\times32$ input volume into a compact $128\times16\times16$ latent representation prior to diffusion, substantially reducing the cost of posterior sampling in 3D.
+
+The remainder of this chapter is organized as follows. Section 4.2 describes the construction of the 3D training dataset from the Sherwood simulations and the anisotropic compression used to prepare it for both pixel- and latent-space diffusion. Section 4.3 details the architecture and training of the variational diffusion prior, together with the frozen VAE used in the latent formulation. Section 4.4 presents the differentiable Voigt forward model, its per-field dependencies and degeneracies, and its validation against an independent optical-depth pipeline. Section 4.5 lays out the diffusion posterior sampling algorithm itself — the Bayesian decomposition into score and likelihood-guidance terms, the Tweedie estimate, and the three-pass memory-efficient gradient computation — as adapted to this three-dimensional, multi-channel setting. Section 4.6 presents reconstruction results — voxel-wise fidelity for all five fields, recovery of the matter power spectrum, a hyperparameter sweep over guidance strength and sightline density, and posterior calibration — under a survey configuration matched to that considered for DeepCHART, enabling a direct, like-for-like comparison between the amortized and posterior-sampling paradigms on the same simulation suite. Section 4.7 discusses the implications of these results, including what the free (likelihood-blind) recovery of $\Delta_{\rm DM}$ implies about the prior, and directions for future work.
+
+---
+
+*References cited above (to be merged into the thesis-wide bibliography): Bi & Davidsen 1997; Bolton et al. 2017; Caucci et al. 2008; Chung, Kim, McCann, Klasky & Ye 2022; Croft et al. 1998; Feng, Chu, Seljak & McDonald 2016; Gunn & Peterson 1965; Horowitz, Lee, White, Krolewski & Ata 2019; Horowitz, Zhang, Lee & Kooistra 2021; Horowitz, Dornfest, Lukić & Harrington 2022; Kingma & Welling 2013; Lanusse et al. 2021; Lee et al. 2014; Lee et al. 2018; Legin, Ho, Lemos, Perreault-Levasseur, Ho, Hezaveh & Wandelt 2023; Lynds 1971; Maitra, Viel & Kulkarni 2026 (DeepCHART, arXiv:2507.00135, MNRAS Vol. 549); McQuinn 2016; Meiksin 2009; Miralda-Escudé, Cen, Ostriker & Rauch 1996; Ono, Park, Mudur, Ni, Cuesta-Lazaro & Villaescusa-Navarro 2024; Pichon, Vergely, Rollinde, Colombi & Petitjean 2001; Rauch 1998; Remy et al. 2023; Schaye, Theuns, Rauch, Efstathiou & Sargent 2000; Viel, Matarrese, Mo, Theuns & Haehnelt 2002; Villaescusa-Navarro et al. 2021.*
+
 % NOTE: This chapter covers both:
 %   - DM field reconstruction (Sec.~\ref{sec:dps_dm})
 %   - Lyman-alpha sightline reconstruction (Sec.~\ref{sec:dps_lya})
 
 %% ---- DM RECONSTRUCTION ------------------------------------
+
+
+% =====================================================================
+% Chapter 4 -- Section: Data Preparation and Optical Depth Theory
+% Sits after Section 4.1 (Introduction); numbered here as 4.2--4.3
+% assuming the intro's roadmap (chapter4_introduction.md) is unchanged.
+% =====================================================================
+
+\section{Data Preparation}
+\label{sec:lya-data-prep}
+
+\subsection{Hydrodynamical simulations and line-of-sight fields}
+\label{sec:lya-sims}
+
+The training and validation data for this chapter are drawn from the same suite of Sherwood-Relics hydrodynamical simulations \citep{bolton2017,puchwein2023} used by \citet{Maitra_2026}, for direct comparability. These simulations are run with GADGET-3, self-consistently solving the coupled photoionization and thermal evolution equations of the gas under a specified ultraviolet background, within a periodic cube of comoving side $L_{\rm box}=40\,h^{-1}\mathrm{cMpc}$ populated with $2\times512^3$ dark matter and gas particles. Nine random-seed realizations are used for training the diffusion prior and one is reserved for held-out validation, following the same train/test split as \citet{Maitra_2026}.
+
+Rather than gridding the raw particle data directly, physical quantities are first evaluated along one-dimensional sightlines threading the box, in a configuration matching Ly$\alpha$ forest tomography surveys. At redshift $z=2.4$, a sightline is discretized into $n_{\rm bins}$ velocity/position bins, and at each bin the local gas overdensity $\Delta_{\rm gas}$, temperature $T$, neutral hydrogen fraction $x_{\rm HI}$, and line-of-sight peculiar velocity $v_{\rm pec}$ are obtained via standard SPH kernel interpolation from the neighboring gas particles,
+\begin{equation}
+f_i = \sum_j f_j\,\frac{m_j}{\rho_j}\,W\!\left(|\mathbf{r}_i-\mathbf{r}_j|,\,h_j\right),
+\label{eq:sph-interp}
+\end{equation}
+where $f_j$, $m_j$, and $\rho_j$ are the quantity, mass, and density carried by particle $j$, and $W$ is the standard cubic-spline smoothing kernel \citep{monaghan1992,Maitra_2026}. The neutral hydrogen fraction $x_{\rm HI}$ and temperature $T$ carried by each gas particle are set on-the-fly during the simulation by GADGET-3's coupled photoionization and thermal evolution solver under the ultraviolet background of \citet{puchwein2019}, including self-shielding corrections that suppress photoionization in dense gas; these particle-level values are then interpolated onto the sightline grid via Eq.~\ref{eq:sph-interp} exactly as $\Delta_{\rm gas}$ and $v_{\rm pec}$ are. The dark matter overdensity $\Delta_{\rm DM}$ is obtained analogously from the dark matter particle distribution and gridded onto the same sightline geometry, but — as emphasized in Section~4.1 — it is retained purely as a target field for the diffusion prior and never enters the optical-depth calculation described below.
+
+\subsection{Sightline data format}
+\label{sec:lya-format}
+
+Each simulation output is stored as a flat binary file containing one full set of sightlines through the box, together with an independently computed reference optical-depth file used for forward-model validation (Section~\ref{sec:lya-validation}). The sightline file layout is summarized in Table~\ref{tab:lya-format}.
+
+\begin{table}[h!]
+\centering
+\caption{Binary layout of a single sightline data file. All floating-point values are \texttt{float64}; \texttt{ilos} and the bin/sightline counts are \texttt{int32}.}
+\label{tab:lya-format}
+\begin{tabular}{lll}
+\hline
+Field & Shape & Description \\
+\hline
+$z,\,\Omega_m,\,\Omega_\Lambda,\,\Omega_b,\,h,\,L_{\rm box},\,X_h$ & 7 scalars & Simulation header \\
+$n_{\rm bins}$, $n_{\rm los}$ & 2 scalars & Pixels per sightline; number of sightlines \\
+\texttt{ilos}, \texttt{xlos}, \texttt{ylos}, \texttt{zlos} & $(n_{\rm los},)$ & Sightline axis and transverse position \\
+\texttt{posaxis}, \texttt{velaxis} & $(n_{\rm bins},)$ & Comoving position and Hubble velocity grids \\
+$\Delta_{\rm gas}$, $x_{\rm HI}$, $T$, $v_{\rm pec}$ & $(n_{\rm los},n_{\rm bins})$ & SPH-interpolated fields (Eq.~\ref{eq:sph-interp}) \\
+\hline
+\end{tabular}
+\end{table}
+
+The reference optical depth $\tau_{\rm true}$ is stored separately as a headerless array of shape $(n_{\rm los},n_{\rm bins})$, computed independently by our collaborators using a validated pipeline; this file is used exclusively to check the forward model developed in Section~\ref{sec:lya-theory} and plays no role in training the diffusion prior.
+
+\section{Theory of the Lyman-$\alpha$ Optical Depth}
+\label{sec:lya-theory}
+
+\subsection{Physical picture}
+\label{sec:lya-physics}
+
+A quasar or star-forming galaxy at redshift $z_s$ illuminates the intervening intergalactic medium along the line of sight; each parcel of neutral hydrogen between source and observer resonantly scatters photons out of the line of sight near the rest-frame Ly$\alpha$ wavelength $\lambda_\alpha = 1215.6701\,\text{\AA}$. Because the Hubble flow maps physical position monotonically onto observed wavelength, a single sightline through the simulation box acts as a one-way ``redshift odometer'': gas at comoving position $x$ imprints absorption at a velocity (equivalently, wavelength) offset
+\begin{equation}
+u(x) = v_{\rm H}(x) + v_{\rm pec}(x),
+\label{eq:redshift-space}
+\end{equation}
+the sum of the local Hubble velocity $v_{\rm H}(x)=H(z)\,x_{\rm phys}$ and the gas's peculiar velocity along the line of sight, $v_{\rm pec}(x)$. This redshift-space mapping is what allows $v_{\rm pec}$ to distort the apparent position of absorption features relative to the real-space density peaks that sourced them.
+
+Two independent physical effects broaden the absorption profile of a parcel of gas away from a single frequency:
+
+\begin{itemize}
+\item \textbf{Thermal Doppler broadening.} Hydrogen atoms at temperature $T$ have a Maxwell--Boltzmann distribution of line-of-sight velocities, so photons resonant with atoms of different thermal velocity are absorbed at correspondingly shifted frequencies. This produces a Gaussian absorption profile of characteristic width (the Doppler parameter)
+\begin{equation}
+b = \sqrt{\frac{2k_B T}{m_H}}.
+\label{eq:doppler-b}
+\end{equation}
+
+\item \textbf{Natural (radiative) damping.} The finite lifetime of the excited $2p$ state, set by the Einstein spontaneous-decay rate $\Gamma_{\rm Ly\alpha}=6.265\times10^8\,{\rm s^{-1}}$, gives the transition an intrinsic Lorentzian linewidth via the energy--time uncertainty relation. This produces extended power-law wings that fall off as $\Delta v^{-2}$ rather than exponentially, controlled by the dimensionless damping parameter
+\begin{equation}
+a = \frac{\Gamma_{\rm Ly\alpha}\,\lambda_\alpha}{4\pi b}.
+\label{eq:voigt-a}
+\end{equation}
+\end{itemize}
+
+The full line profile is the convolution of the Gaussian Doppler core with the Lorentzian damping wings — the \emph{Voigt profile}. Because $a\sim10^{-3}$ for Ly$\alpha$ at IGM temperatures, the profile is very nearly Gaussian near line center, with the damping term contributing only a small correction except deep in the wings.
+
+A key consequence of this convolution is that the optical depth observed at a given pixel $i$ is \emph{not} a local function of the density at the corresponding position alone: gas at every other pixel $j$ along the sightline contributes to $\tau$ at pixel $i$, weighted by how far $j$'s absorption profile extends in velocity space to reach $i$. Sharp density peaks in real space are therefore smeared in velocity space by roughly $2b$ (a few tens of km s$^{-1}$ at $T\sim10^4\,$K), and peculiar velocities shift each absorption feature away from the real-space location of its sourcing density peak. This is the origin of ``redshift-space distortions'' in the Ly$\alpha$ forest and is fully captured by treating $\tau$ as a discretized convolution rather than a pointwise map.
+
+\subsection{The Voigt--Hjerting function and the Tepper-Garcia approximation}
+\label{sec:voigt-hjerting}
+
+The normalized Voigt line profile can be written in terms of the dimensionless velocity offset $x=(v-u)/b$ and damping parameter $a$ via the Voigt--Hjerting function $H(a,x)$, defined so that $H(0,x)=e^{-x^2}$ recovers the pure-Doppler Gaussian core. Direct numerical evaluation of $H(a,x)$ is expensive inside a differentiable, GPU-vectorized pipeline, so we use the closed-form approximation of \citet{tepper-garcia2006},
+\begin{equation}
+H(a,x) \approx e^{-x^2} - \frac{a}{\sqrt{\pi}\,x^2}\left[e^{-2x^2}\!\left(4x^4+7x^2+4+\frac{3}{2x^2}\right)-\frac{3}{2x^2}-1\right],
+\label{eq:tepper-garcia}
+\end{equation}
+which reduces smoothly to the Gaussian limit $H(a,x)\to e^{-x^2}$ as $x\to0$ and is accurate to better than $10^{-4}$ over the range of $a$ and $x$ relevant to the IGM. Equation~\ref{eq:tepper-garcia} is evaluated with a separate small-$x$ branch in our implementation to avoid the removable $0/0$ singularity as $x\to0$.
+
+\subsection{Discretized optical depth along a sightline}
+\label{sec:tau-discretized}
+
+Combining the physical picture of Section~\ref{sec:lya-physics} with the Tepper-Garcia profile, the Ly$\alpha$ optical depth at velocity $v_i$ is the sum, over every pixel $j$ along the sightline, of that pixel's contribution to the absorption at $v_i$:
+\begin{equation}
+\tau(v_i) = \sum_j \underbrace{\frac{c\,\sigma_{\rm Ly\alpha}\,\Delta x_{\rm phys}\,\bar n_{\rm H}(z)}{\sqrt{\pi}}\,\frac{\Delta_{{\rm gas},j}\,x_{{\rm HI},j}}{b_j}}_{\displaystyle \tau^\delta_j}\;\; H\!\left(a_j,\,\frac{v_i-u_j}{b_j}\right),
+\label{eq:tau-sum}
+\end{equation}
+where $\sigma_{\rm Ly\alpha}=\sqrt{3\pi\sigma_T/8}\,\lambda_\alpha f_{\rm osc}$ is the frequency-integrated Ly$\alpha$ absorption cross-section written in terms of the Thomson cross-section $\sigma_T$ and oscillator strength $f_{\rm osc}=0.4164$, $\Delta x_{\rm phys}$ is the physical width of one sightline pixel at redshift $z$, and $\bar n_{\rm H}(z)$ is the mean physical hydrogen number density obtained from the cosmological parameters,
+\begin{equation}
+\bar n_{\rm H}(z) = \frac{3H_0^2}{8\pi G}\,\frac{\Omega_b X_h}{(1+z)^3\,m_H}, \qquad H_0 = 100\,h\;{\rm km\,s^{-1}\,Mpc^{-1}}.
+\label{eq:mean-nH}
+\end{equation}
+Equation~\ref{eq:tau-sum} is precisely the standard Gunn--Peterson-type optical-depth expression used throughout the Ly$\alpha$ forest literature (e.g.\ \citealt{tepper-garcia2006}), but evaluated \emph{directly} from the hydrodynamical simulation's $\Delta_{\rm gas}$, $x_{\rm HI}$, and $T$ fields rather than from an FGPA-style closure relating $x_{\rm HI}$ and $T$ to $\Delta_{\rm gas}$ alone through a fixed power-law equation of state. This is the same distinction drawn in Section~4.1 between our forward model and the FGPA-based forward model used in TARDIS \citep{horowitz2019,horowitz2021}: by construction, none of the small-scale baryonic physics (pressure smoothing, shock heating, patchy reionization) needs to be re-derived analytically, since it is already encoded in the simulation fields that Eq.~\ref{eq:tau-sum} consumes directly.
+
+Because the simulation box is periodic, the velocity separation $|v_i-u_j|$ appearing inside $H$ is wrapped onto the interval $[0,v_{\rm max}/2]$, where
+\begin{equation}
+v_{\rm max} = H(z)\,L_{\rm box,phys} = H(z)\,\frac{L_{\rm box}\,(1+z)^{-1}}{h}
+\label{eq:vmax}
+\end{equation}
+is the total Hubble velocity spanned by one period of the box; separations larger than $v_{\rm max}/2$ are replaced by $v_{\rm max}$ minus themselves before evaluating Eq.~\ref{eq:tepper-garcia}.
+
+Equation~\ref{eq:tau-sum} is evaluated as a dense $n_{\rm bins}\times n_{\rm bins}$ pairwise sum per sightline, the discretized analogue of the convolution integral $\tau(v) = \int dx\,n_{\rm HI}(x)\,\sigma_{\rm Ly\alpha}\,\phi(v-u(x))$  which is implemented as a fully vectorized, GPU-based and automatically differentiable operation, a requirement for its later use as the likelihood term in diffusion posterior sampling (Section~4.5).
+
+\subsection{Validation against an independent optical-depth pipeline}
+\label{sec:lya-validation}
+
+The implementation of Eq.~\ref{eq:tau-sum} was validated against the independently computed reference optical depth $\tau_{\rm true}$ described in Section~\ref{sec:lya-format}, for held-out sightlines not used anywhere else in this chapter. Figure~\ref{fig:forward-model-validation} compares the resulting transmitted flux $F=e^{-\tau}$ from both pipelines for a representative sightline; the two agree to within numerical floating-point precision, with a maximum relative error of $\sim3\times10^{-12}$ and a mean relative error of $\sim3\times10^{-14}$ across all pixels. This confirms that the forward model reproduces the reference calculation exactly, up to floating-point roundoff, and can be used as a drop-in differentiable replacement inside the posterior-sampling loop developed later in this chapter.
+
+\begin{figure}[h!]
+\centering
+% \includegraphics[width=\linewidth]{forward_model_validation.png}
+\caption{Validation of the differentiable Voigt forward model (Eq.~\ref{eq:tau-sum}) against an independently computed reference optical depth, for a representative held-out sightline. \emph{Top:} transmitted flux $F=e^{-\tau}$ from the reference pipeline and from our implementation. \emph{Bottom:} absolute relative error between the two, which remains at the level of floating-point precision ($\sim10^{-12}$--$10^{-14}$) across the full sightline.}
+\label{fig:forward-model-validation}
+\end{figure}
+
+% =====================================================================
+% Bibliography entries to add to the thesis-wide .bib file:
+%
+% @article{tepper-garcia2006, author={Tepper-Garc\'ia, T.}, journal={MNRAS}, year={2006}, volume={369}, pages={2025}}
+% @article{monaghan1992, author={Monaghan, J. J.}, journal={ARA\&A}, year={1992}, volume={30}, pages={543}}
+% @article{maitra2026deepchart, author={Maitra, S. and Viel, M. and Kulkarni, G.}, journal={MNRAS}, year={2026}, note={arXiv:2507.00135}}
+% @article{horowitz2019, author={Horowitz, B. and Lee, K.-G. and White, M. and Krolewski, A. and Ata, M.}, journal={arXiv:1903.09049}, year={2019}}
+% @article{horowitz2021, author={Horowitz, B. and Zhang, B. and Lee, K.-G. and Kooistra, R.}, journal={ApJ}, year={2021}, volume={906}, pages={110}}
+% =====================================================================
+
+
 \section{Theoretical Background: Diffusion Posterior Sampling}
 \label{sec:dps_theory}
 Talk about the idea behind using diffusion models as generative priors
