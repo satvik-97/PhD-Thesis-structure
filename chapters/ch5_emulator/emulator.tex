@@ -87,7 +87,7 @@ chapter is organized as follows. Section~\ref{sec:emu_pipeline} gives a
 high-level overview of the pipeline. Section~\ref{sec:emu_dmmaps} describes
 the DM simulations and the target galaxy/HI fields used to train the
 emulator. Sections~\ref{sec:emu_arch} and~\ref{sec:emu_train} describe the
-\HGL architecture and its training in detail, this is the core contribution
+\HGL architecture and its training in detail. This is the core contribution
 of the author to this work. Section~\ref{sec:emu_sbi} summarizes, briefly,
 how the emulated fields are subsequently used for SBI.
 Section~\ref{sec:emu_results} reports results, first on the fidelity of the
@@ -103,7 +103,7 @@ directions.
     \centering
     % TODO(sami): export the pipeline sketch from the paper repo
     \includegraphics[width=0.85\linewidth]{chapters/ch5_emulator/emulator2.pdf}
-    \caption{High-level overview of the pipeline described in this chapter. Approximate dark-matter maps generated with \FastPM are passed through the Attention Unet, we call the \HGL emulator, to produce galaxy and HI fields conditioned on cosmological and astrophysical parameters. These emulated fields are then either compressed to a power spectrum or fed to a convolutional encoder, and in both cases used to train a normalizing-flow-based NPE model that infers the posterior on $\Om$ and $\sige$.}
+    \caption{High-level overview of the pipeline described in this chapter. Approximate dark-matter maps generated with \FastPM are passed through \HGL, the Attention Unet emulator, to produce galaxy and HI fields conditioned on cosmological and astrophysical parameters. These emulated fields are then either compressed to a power spectrum or fed to a convolutional encoder, and in both cases used to train a normalizing-flow-based NPE model that infers the posterior on $\Om$ and $\sige$.}
     \label{fig:emulator_pipeline_sketch}
 \end{figure}
 
@@ -188,7 +188,7 @@ larger box size (the available alternative, the SB35 suite, varies 30
 astrophysical parameters simultaneously instead of 4, making it unsuitable
 for this emulator). This choice, using an emulator trained at one box size
 to generate maps at another, is only valid because the two box sizes share
-the same voxel resolution; This ofcourse brings its own limitations, which is also discussed in  Section~\ref{sec:emu_val}.
+the same voxel resolution. This of course is also the main limitation of the current pipeline, which is also discussed in Section~\ref{sec:emu_val}.
 
 \section{The \HGL emulator: architecture}
 \label{sec:emu_arch}
@@ -287,12 +287,11 @@ the original \HALOgen into one that can be queried at arbitrary points in
 parameter space without retraining.
 
 \paragraph{What the emulator can and cannot vary.}
-Given a DM map $\mathcal{F}^{\rm DM}_i(\Om_i, \sige_i)$ at cosmology $i$, the
+Given a DM map $\mathcal{F}^{\rm DM}_{i}(\Omega_{m_i}, \sigma_{8_i})$ at cosmology $i$, the
 network produces the corresponding galaxy or HI field at that same
 cosmology, for any astrophysics $j$ of choice,
 \begin{equation}
-    \mathcal{F}^{\rm DM}_i(\Om_i, \sige_i) \xrightarrow{\ \text{U-Net}\ }
-    \mathcal{F}^{\rm gal/HI}_i\!\left(\Om_i, \sige_i,\, A_{\rm SN1_j}, A_{\rm AGN1_j}, A_{\rm SN2_j}, A_{\rm AGN2_j}\right).
+    \mathcal{F}^{\rm DM}_{i}(\Omega_{m_i}, \sigma_{8_i}) \:\: \xrightarrow[]{\text{U-Net}} \:\: \mathcal{F}^{\rm gal/HI}_{i}(\Omega_{m_i}, \sigma_{8_i}, {\rm A_{SN1_{j}},A_{AGN1_{j}},A_{SN2_{j}},A_{AGN2_{j}}}).
 \end{equation}
 Astrophysics can be varied freely at inference time because it is injected
 purely through the FiLM conditioning; cosmology cannot, because it is
@@ -378,7 +377,7 @@ itself set by the \HGL emulator described above.
 
 \begin{figure}[h!]
     \centering
-    \includegraphics[width=0.7\linewidth]{chapters/ch5_emulator/Gal_2by2.pdf}
+    \includegraphics[width=0.9\linewidth]{chapters/ch5_emulator/Gal_2by2.pdf}
     \caption{\HGL emulator performance at $25\Mpch$ on the held-out \CAMELS
     LH test set (242 maps), for the galaxy tracers. A sample from
     \CAMELS (left) vs. emulated map (right). Bottom left: mean and 1$\sigma$ shaded band for the residual power spectrum $\Delta_{\Pk} = (\Pk^{\rm TRUE} - \Pk^{\rm EMULATED})/\Pk^{\rm TRUE}$ for all the 242 test simulations. Bottom right: Histogram comparison for the same 242 simulations, true vs emulated. }
@@ -436,7 +435,7 @@ than at $25\Mpch$.
 \end{figure}
 
 Figure~\ref{fig:emulator_validation_50_hi} shows the corresponding
-degradation for the HI tracers. The most likely explanation is that larger
+degradation for the HI tracers, similar for the galaxy case. The most likely explanation for both these $50\Mpch$ cube is that larger
 boxes contain larger-scale modes, and correspondingly more massive halos,
 than the network ever saw during training on smaller boxes; the emulator is
 being asked to extrapolate into a regime it was never exposed to, not
@@ -483,12 +482,12 @@ presented with full field data rather than just the summary statistics.
     \end{tabular}
 \end{table}
 
-This is also visually evident in Figure~\ref{fig:fom_visual}.
+This is also visually evident in Figure~\ref{fig:fom_visual},~\ref{fig:posteriors_downstream_fixedastro} and~\ref{fig:posteriors_downstream_freeastro}.
 
 \begin{figure}[h!]
 	\centering
 	\includegraphics[width=0.7\linewidth]{chapters/ch5_emulator/fom_plot.pdf}
-	\caption{Visualizing the FOM table~\ref{tab:emu_fom}}
+	\caption{Visualizing the FOM table~\ref{tab:emu_fom}. The bottom axis is divided into 3 labeled parts and the y axis shows the $\mathrm{FoM}_m$ scores, with sane colors representing same tracers.}
     \label{fig:fom_visual}
 \end{figure}
 
@@ -657,8 +656,7 @@ paired training suite becomes available, to test transfer to independent
 simulation codes and to real survey-like maps (including instrumental noise,
 beams, and foregrounds for the HI tracer, and realistic selection functions
 for the galaxy tracer), and to extend the redshift range beyond the $z=0$
-snapshot considered here. More broadly, this emulator combined with neural posterior estimation approach and
-the diffusion-based posterior sampling framework of Chapter~\ref{ch:dps}
+snapshot considered here. More broadly, this combination of emulator and neural posterior estimation approach and the diffusion-based posterior sampling framework of Chapter~\ref{ch:dps}
 represent two complementary routes to the same underlying goal: recovering
 the cosmological information that summary statistics discard, in a
 computational regime where full hydrodynamical simulations, run at the

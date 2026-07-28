@@ -9,7 +9,7 @@ Tell why we need to have the modeling of the HI signal and what has been done in
 \section{Data and simulations}
 \label{sec:dataset_camels}
 For this work, we use the CAMELS--IllustrisTNG suite of cosmological 
-simulations~\citep{villaescusa-navarro_camels_2022}, which are created by varying cosmological parameters ($\Omega_m$ and $\sigma_8$) and astrophysical parameters (supernova and AGN feedback) across different realizations. Specifically, $A_{\mathrm{SN1}}$ and $A_{\mathrm{SN2}}$ are normalization factors for the energy and speed of galactic wind feedback, respectively; $A_{\mathrm{AGN1}}$ and $A_{\mathrm{AGN2}}$ control the energy output and specific energy of AGN feedback. These simulations are run using the moving-mesh hydrodynamics code AREPO~\citep{weinberger_arepo_2020}, which combines a TreePM gravity solver with a finite-volume Godunov scheme on an unstructured Voronoi mesh. Stellar feedback follows the IllustrisTNG rescriptions~\citep{pillars_of_the_storm}, and particles are evolved from $z=127$.
+simulations~\citep{villaescusa-navarro_camels_2022}, which are created by varying cosmological parameters ($\Omega_m$ and $\sigma_8$) and astrophysical parameters (supernova and AGN feedback) across different realizations. Specifically, $A_{\mathrm{SN1}}$ and $A_{\mathrm{SN2}}$ are normalization factors for the energy and speed of galactic wind feedback, respectively; $A_{\mathrm{AGN1}}$ and $A_{\mathrm{AGN2}}$ control the energy output and specific energy of AGN feedback. These simulations are run using the moving-mesh hydrodynamics code AREPO~\citep{weinberger_arepo_2020}, which combines a TreePM gravity solver with a finite-volume Godunov scheme on an unstructured Voronoi mesh. Stellar feedback follows the IllustrisTNG prescriptions, and particles are evolved from $z=127$.
 
 For our work, we train on the Cosmic Variance (CV) set of IllustrisTNG 
 realizations, comprising 27 simulations with identical cosmology and 
@@ -18,6 +18,36 @@ comoving side length of $25\,h^{-1}\,\mathrm{Mpc}$ with $256^3$ gas and dark mat
 
 
 \section{LODI pipeline}
+The Introduction already laid out why 21\,cm intensity mapping needs a fast,
+accurate alternative to full hydrodynamical simulations
+(Section~\ref{sec:sim_bottleneck}), and reviewed the three established ways
+of connecting the HI signal to the underlying matter distribution, namely the halo
+models, perturbation theory, and hydrodynamical simulations themselves
+(Section~\ref{sec:21cm_im}). Existing machine-learning alternatives to these
+three, reviewed in Section~\ref{sec:ml_field_level}, have so far relied on
+normalizing flows or generative adversarial networks. The current state of the art, Diffusion models,
+despite being the current state of the art for high-fidelity generative
+modeling (Section~\ref{sec:diffusion_intro}), have seen essentially no
+application to 21\,cm intensity mapping specifically~\citep{ono_debiasing_2024}.
+This leaves a genuine gap: a method that learns the HI to dark-matter
+connection directly from simulations, while being physically motivated, with the fidelity of a diffusion
+model, while remaining fast and cheap enough to generate the large volumes
+and large number of realizations that downstream applications such as
+cross-correlation studies with other LSS tracers chief among them require.
+
+\LODI closes this gap in two stages. A conditional U-Net (\HALOgen,
+Section~\ref{sec:extract_halos}) first learns the mapping from a fast,
+approximate dark-matter-only simulation to the underlying halo distribution,
+removing the need for a full N-body run just to identify halos. A diffusion
+model then paints the 21\,cm brightness temperature field onto that halo
+distribution (Section~\ref{sec:paint_HI}), capturing small scale, non-linear
+structure that halo-model or perturbative approaches have a hard time approaching.
+A latent-overlap generation scheme, described later in this chapter, lets
+both networks, trained on a single, computationally tractable box size,
+generate volumes substantially larger than that training box, without the
+seams or edge artifacts of naive patch-based tiling. This is, to our
+knowledge, the first demonstration of a diffusion-based, halo-conditioned
+approach to 21\,cm intensity mapping.
 \section{Methodology}
 \label{methodology}
 In this section, we explain the machine learning technique, the mock datasets used, and the training methods implemented.
@@ -100,7 +130,7 @@ In other words, the threshold eliminates pixels that contain low-density values,
     1  & \text{if } \rho_{\text{h}}^{(i,k)} \leq T_c^{(i)} \, .
 \end{cases}
 \end{equation}
-We normalize the mask such that $\displaystyle \sum_{i,k} m_w^{i,k}= 64$, or each training mask of shape $4\times64^3$ adds to 1 on average, since each simulation is made of 64 sub-volumes.
+We normalize the mask such that $\displaystyle \sum_{i,k} m_w^{i,k}= 64$, or each training mask of shape $4\times64^3$ adds to 1 on average, since each simulation is made of 64 sub-volumes $\left(256/64\right)^3=64$.
 
 \begin{figure*}[h!]
     \centering
@@ -135,7 +165,7 @@ Here $q \in (0, 1)$ is the chosen quantile.
 The weights $\beta^j$ set the relative scaling of the contribution of a particular channel to the loss. 
 To further deal with sparsity, we add the $L_1^{\text{reg}}$ regularization term, defined as:
 \begin{equation}
-    L_1^{\text{reg}} = \sum_{i=1} \left| w^i_{\boldsymbol{\theta}} \right|
+    L_1^{\text{reg}} = \sum_{i=1}^{N_\text{params}} \left| w^i_{\boldsymbol{\theta}} \right|
 \end{equation}
 where $\left| w^i_{\boldsymbol{\theta}} \right|$ are the neural network weights, and $i$ runs over the network's parameters.
 \vspace{\baselineskip}
@@ -220,7 +250,7 @@ An equivalent and widely used form of Eq.~\eqref{eq:vdm_diffusion_loss} is the \
 \begin{equation}
     \hat{\bm{x}}_{\bm{\theta}} = \frac{\bm{z}_t - \sigma_t\,\hat{\bm{\epsilon}}_{\bm{\theta}}}{\alpha_t}\,,
     \label{eq:tweedie}
-\end{equation}.
+\end{equation}
 
 \paragraph{Latent loss.}
 The latent loss measures how close the fully noised distribution $q(\bm{z}_1 \mid \bm{x}_0)$ is to the standard Gaussian prior $p(\bm{z}_1) = \mathcal{N}(\bm{0}, \bm{I})$:
@@ -605,8 +635,7 @@ third axis. We also plot the dimensional power spectrum $P_{\hat{T}_b}$, compute
 \end{figure*}
 
 To generate these results, \HALOgen~was trained for about 21 hours on a single A100 GPU. The training of \LODI\ took  600,000 iterations, using a batch size of 16. The total training time was around 30 hours, using a single A100 GPU. 
-
-When generating, the total time taken by the pipeline to produce one temperature map for the whole $256^3$ volume starting from the dark matter field is 106 seconds (16 seconds for \HALOgen, 90 seconds for \HALOgen). 
+When generating, the total time taken by the pipeline to produce one temperature map for the whole $256^3$ volume starting from the dark matter field is 106 seconds (16 seconds for \HALOgen, 90 seconds for \LODI). 
 
 
 
