@@ -1,21 +1,6 @@
-% ============================================================
-% chapters/ch1_lodi/lodi.tex
-% ============================================================
 \chapter{LODI: Large, Fast and Accurate Neutral Hydrogen Intensity Maps with Latent Overlap Diffusion}
 
 \label{ch:lodi}
-\section{Problem statement}
-Tell why we need to have the modeling of the HI signal and what has been done in the past in this domain.
-\section{Data and simulations}
-\label{sec:dataset_camels}
-For this work, we use the CAMELS--IllustrisTNG suite of cosmological 
-simulations~\citep{villaescusa-navarro_camels_2022}, which are created by varying cosmological parameters ($\Omega_m$ and $\sigma_8$) and astrophysical parameters (supernova and AGN feedback) across different realizations. Specifically, $A_{\mathrm{SN1}}$ and $A_{\mathrm{SN2}}$ are normalization factors for the energy and speed of galactic wind feedback, respectively; $A_{\mathrm{AGN1}}$ and $A_{\mathrm{AGN2}}$ control the energy output and specific energy of AGN feedback. These simulations are run using the moving-mesh hydrodynamics code AREPO~\citep{weinberger_arepo_2020}, which combines a TreePM gravity solver with a finite-volume Godunov scheme on an unstructured Voronoi mesh. Stellar feedback follows the IllustrisTNG prescriptions, and particles are evolved from $z=127$.
-
-For our work, we train on the Cosmic Variance (CV) set of IllustrisTNG 
-realizations, comprising 27 simulations with identical cosmology and 
-astrophysics but different initial conditions. Each simulation box has a 
-comoving side length of $25\,h^{-1}\,\mathrm{Mpc}$ with $256^3$ gas and dark matter particles. We use the fiducial IllustrisTNG model: $\Omega_m = 0.3089$, $\sigma_8 = 0.8159$, and all four astrophysical parameters (collectively denoted as $\mathbf{A}$) set to their standard values of 1.0. This choice allows us to test generalization across different initial seeds while keeping cosmology and astrophysics fixed. Here, $\Omega_m$ denotes the present-day matter density parameter, and $\sigma_8$ is the root-mean-square amplitude of linear matter fluctuations on scales of $8\,h^{-1}\,\mathrm{Mpc}$.
-
 
 \section{LODI pipeline}
 The Introduction already laid out why 21\,cm intensity mapping needs a fast,
@@ -48,6 +33,18 @@ generate volumes substantially larger than that training box, without the
 seams or edge artifacts of naive patch-based tiling. This is, to our
 knowledge, the first demonstration of a diffusion-based, halo-conditioned
 approach to 21\,cm intensity mapping.
+
+\section{Data and simulations}
+\label{sec:dataset_camels}
+For this work, we use the CAMELS suite of cosmological
+simulations~\citep{villaescusa-navarro_camels_2022}, specifically the IllustrisTNG ones, which are created by varying cosmological parameters ($\Omega_m$ and $\sigma_8$) and astrophysical parameters (supernova and AGN feedback) across different realizations. Specifically, $A_{\mathrm{SN1}}$ and $A_{\mathrm{SN2}}$ are normalization factors for the energy and speed of galactic wind feedback, respectively; $A_{\mathrm{AGN1}}$ and $A_{\mathrm{AGN2}}$ control the energy output and specific energy of AGN feedback. These simulations are run using the moving-mesh hydrodynamics code AREPO~\citep{weinberger_arepo_2020}, which combines a TreePM gravity solver with a finite-volume Godunov scheme on an unstructured Voronoi mesh. Stellar feedback follows the IllustrisTNG prescriptions, and particles are evolved from $z=127$.
+
+For our work, we train on the Cosmic Variance (CV) set of IllustrisTNG
+realizations, comprising 27 simulations with identical cosmology and
+astrophysics but different initial conditions. Each simulation box has a
+comoving side length of $25\,h^{-1}\,\mathrm{Mpc}$ with $256^3$ gas and dark matter particles. We use the fiducial IllustrisTNG model: $\Omega_m = 0.3089$, $\sigma_8 = 0.8159$, and all four astrophysical parameters (collectively denoted as $\mathbf{A}$) set to their standard values of 1.0. This choice allows us to test generalization across different initial seeds while keeping cosmology and astrophysics fixed. Here, $\Omega_m$ denotes the present-day matter density parameter, and $\sigma_8$ is the root-mean-square amplitude of linear matter fluctuations on scales of $8\,h^{-1}\,\mathrm{Mpc}$.
+
+
 \section{Methodology}
 \label{methodology}
 In this section, we explain the machine learning technique, the mock datasets used, and the training methods implemented.
@@ -65,35 +62,35 @@ An overview of the full pipeline is presented in Fig.~\ref{fig:pipeline}.
     \label{fig:pipeline}
 \end{figure*}
 
-\subsection{Extracting halos from DM only sim}
+\subsection{\HALOgen: Extracting halos from DM only sim}
 \label{sec:extract_halos}
-\subsubsection{Halogen: Network architecture}
+\subsubsection{Network architecture}
 
 
-A U-Net, introduced by~\citet{ronneberger_u-net_2015} is a deep hierarchical convolutional neural network with encoder and decoder layers, used to perform image-to-image translation tasks an ideal architecture for our aim of predicting halo maps from $\boldsymbol{\rho}_\text{DM}$ maps. 
+A U-Net, as discussed in the introduction section~\ref{sec:cnn_unet}, is a deep hierarchical convolutional neural network with encoder and decoder layers, used to perform image-to-image translation tasks an ideal architecture for our aim of predicting halo maps from $\boldsymbol{\rho}_\text{DM}$ maps.
 
-We use ResNet blocks~\citep{he_deep_2015} as the fundamental blocks for the U-Net architecture, as well as an attention block at the bottleneck motivated by~\citet{petit_u-net_2021}. The attention block enhances the ability of the model to capture and highlight complex structure and long-range dependencies within the data. 
+We use ResNet blocks~\citep{he_deep_2015} as the fundamental blocks for the U-Net architecture, as well as an attention layer (See sec.~\ref{sec:attention}) at the bottleneck motivated by~\citet{petit_u-net_2021}. The attention block enhances the ability of the model to capture and highlight complex structure and long-range dependencies within the data.
 \begin{figure*}
     \centering
     \includegraphics[width=0.9\linewidth]{chapters/ch1_lodi/Unet_dm_to_halo.pdf}
     \caption{Overview of the \HALOgen\ (Halo Assignment and Generation with U-Net) architecture used for halo assignment from an input DM-only map, employing grouped 3D convolutions (gray blocks) and an attention mechanism at the bottleneck. Upsampling is done via trilinear interpolation to avoid artifacts in the upsampled map. Horizontal lines represent skip connections.{The input data has shape of $64^3$ voxels while the bottleneck has a spatial shape of $8^3$.} }
     \label{fig:Unethalo}
 \end{figure*}
-The architecture, depicted in Fig.~\ref{fig:Unethalo}, consists of 3 encoding blocks with grouped convolutions, which process a 3D $\boldsymbol{\rho}_\text{DM}$ input of size $64^3$ voxels. The input is progressively downsampled through three stages, reaching a bottleneck representation of size of $8^3$ voxels, with $2\times2\times2$ kernel max-pooling layers employed for downsampling to reduce spatial resolution while preserving dominant features. 
-For the up-sampling leg of the architecture, we use trilinear interpolation instead of the more commonly used transposed convolutions to avoid checkered board artifacts grid-like patterns that can arise when upsampling images. Trilinear interpolation estimates voxel values by computing a weighted average of the eight nearest neighbors, ensuring a smoother reconstruction. To enhance high-level feature preservation, we incorporate skip connections (represented as horizontal grey lines in Fig.~\ref{fig:Unethalo}) after upsampling, whose aim is to transfer directly feature maps from corresponding encoder layers to decoder layers, thus bypassing the bottleneck. 
+The architecture, depicted in Fig.~\ref{fig:Unethalo}, consists of 3 encoding blocks with grouped convolutions, which process a 3D $\boldsymbol{\rho}_\text{DM}$ input of size $64^3$ voxels. The input is progressively downsampled through three stages, reaching a bottleneck representation of size of $8^3$ voxels, with $2\times2\times2$ kernel max-pooling layers employed for downsampling to reduce spatial resolution while preserving dominant features.
+For the up-sampling leg of the architecture, we use trilinear interpolation instead of the more commonly used transposed convolutions to avoid checkered board artifacts grid-like patterns that can arise when upsampling images. Trilinear interpolation estimates voxel values by computing a weighted average of the eight nearest neighbors, ensuring a smoother reconstruction. To enhance high-level feature preservation, we incorporate skip connections (represented as horizontal grey lines in Fig.~\ref{fig:Unethalo}) after upsampling, whose aim is to transfer directly feature maps from corresponding encoder layers to decoder layers, thus bypassing the bottleneck.
 
 The last decoder block leads to a set of grouped convolution layers that transform the output into 4 channels, each corresponding to a halo map density field $\boldsymbol{\rho}_{\text{h}}^{(i)}$, where $i=1,\dots,4$ is the channel number. Each channel describes halos within a top-hat mass range (a bin). Attributing halos to different mass bins is necessary to reduce the dynamic range of the relationship between halo mass and HI mass, and to account for its strong dependence on halo mass: halos with mass $M_{\text{halo}}<3\times10^{10}~M_\odot $ contribute $\approx 95 \%$ of the total number count of halos, but their combined HI mass is only $\approx 5 \%$ of the total HI in the simulation. At the other end of the mass distribution, halos of mass $\geq 10^{12} M_\odot$ populate only about $\approx 0.5 \%$ of the simulation but account for more than $ 25 \%$ of the HI mass. Our binning both reduces the dynamic range spanned by the $M_{\text{HI}}$ to $M_{\text{halo}}$ relationship (thus facilitating learning) and also accounts for the halo-mass dependency of the relation.
-{The HI mass function, as determined by~\citet{Ma_2025_FASHI,Jones_ALFA}, features a knee HI mass of $\approx7.5\times10^9M_\odot$, with the power-law slope for low mass being $\alpha=-1.3$, indicating that contribution from HI regions smaller than the knee HI mass is non-negligible. Following~\citet{villaescusa-navarro_ingredients_2018}, the HI cutoff mass for our case is $\approx10^8M_\odot$, which is almost two orders of magnitude smaller than the knee mass determined observationally. This provides reassurance that we are accounting for most of the HI regions.} 
+{The HI mass function, as determined by~\citet{Ma_2025_FASHI,Jones_ALFA}, features a knee HI mass of $\approx7.5\times10^9M_\odot$, with the power-law slope for low mass being $\alpha=-1.3$, indicating that contribution from HI regions smaller than the knee HI mass is non-negligible. Following~\citet{villaescusa-navarro_ingredients_2018}, the HI cutoff mass for our case is $\approx10^8M_\odot$, which is almost two orders of magnitude smaller than the knee mass determined observationally. This provides reassurance that we are accounting for most of the HI regions.}
 
 The (fixed) boundaries of the top-hat mass ranges are chosen to obtain similar HI mass within each bin\footnote{This remains true, up to a few percent, for all maps in the cross-validation set of the simulation, which share the same astrophysical parameters. Generalizing this approach across different parameter values will be the focus of future work.},  and are given by:
 \begin{equation}
-\left[3 \times 10^{10}, 10^{11}, 5 \times 10^{11}, 10^{12}, \max \left( M_{\text{halo}} \right) \right] \ M_\odot \, . 
+\left[3 \times 10^{10}, 10^{11}, 5 \times 10^{11}, 10^{12}, \max \left( M_{\text{halo}} \right) \right] \ M_\odot \, .
 \label{eq:halo_bins}
 \end{equation}
-{where the maximum value of $M_\text{halo}$ is $\approx 1.7\times10^{14}M_\odot$.} 
+{where the maximum value of $M_\text{halo}$ is $\approx 1.7\times10^{14}M_\odot$.}
 We use group convolution and group normalization layers to enforce that output channels be independent; experimentation with mixing the information between different groups (4 or multiples of 4) has shown that this degrades performance. The output of the network has a voxel dimension of $4\times 64^3$. {Compared to larger simulations such as TNG300, which host halos up to $\approx 10^{15}M_\odot$, the smaller CAMELS volumes do not sample such large systems. While this restricts the direct modeling of the rarest, most massive clusters, CAMELS provides a more machine-learning–friendly baseline, and our approach can in the future be extended to larger simulations or large cluster regions. }
 
-To create the full $256^3$ voxels map, we take  individual $64^3$ voxels sub-volume dark matter fields and feed them to our model. Then we use a stride of 16 pixels in every cartesian direction to pick our next $64^3$ box. The overlapping pixels are averaged over to get the final output. 
+To create the full $256^3$ voxels map, we take  individual $64^3$ voxels sub-volume dark matter fields and feed them to our model. Then we use a stride of 16 pixels in every cartesian direction to pick our next $64^3$ box. The overlapping pixels are averaged over to get the final output.
 
 \subsubsection{Training dark matter and halo mass density maps}
 
@@ -105,27 +102,26 @@ To determine the halo mass density field $\rhoh$, we use the SUBFIND algorithm~\
 Maps are smoothed with a Gaussian kernel of fixed radius $R = 0.2\Mpch$ to increase the signal to noise ratio (SNR) and remove irrelevant small-scale features to help training.
 
 
-\subsubsection{Loss function: Masking technique}
-\subsubsection{\HALOgen~loss function} 
+\subsubsection{\HALOgen loss function}
 
-The loss function needs to deal with the sparsity of the $\rhoh^{(i)}$ maps. Furthermore, a given DM voxel may be associated with multiple halos of different masses (and falling into different halo mass bins), making it challenging for the model to disentangle their respective contributions. We call this phenomenon `channel mixing', i.e., the fact that halo information from one channel leaks into adjacent channels. Moreover, since the binning scheme is not explicitly encoded within the neural network architecture, the model must learn to distinguish halos across adjacent bins without misclassifications. 
-Ensuring proper bin differentiation is crucial to maintaining the physical consistency of the model predictions. 
+The loss function needs to deal with the sparsity of the $\rhoh^{(i)}$ maps. Furthermore, a given DM voxel may be associated with multiple halos of different masses (and falling into different halo mass bins), making it challenging for the model to disentangle their respective contributions. We call this phenomenon `channel mixing', i.e., the fact that halo information from one channel leaks into adjacent channels. Moreover, since the binning scheme is not explicitly encoded within the neural network architecture, the model must learn to distinguish halos across adjacent bins without misclassifications.
+Ensuring proper bin differentiation is crucial to maintaining the physical consistency of the model predictions.
 
 To address the above issues, we create a custom-weighted mask, $m_w^i$ ($i=1, \dots, 4$), associated to each halo channel $i$. The purpose of the mask is to give higher weight to pixels with halos in channel $i$, while enforcing a negligible contribution to the loss from halos in neighboring channels, thus helping both with sparsity and channel separation.
 
 For a given halo channel $i$, with halo mass density field $\boldsymbol{\rho}_{\text{h}}^{(i)}$, we define its weight as:
 \begin{equation} \label{eqn:mask}
-    w^i = 
+    w^i =
     \frac{N_\text{mesh}^3}{\displaystyle \sum_{j = \max(1,i-1)}^{\min(4,i+1)} \sum_{k=1}^{N_\text{mesh}} {\boldsymbol{\theta}}(\rho_h^{(j,k)} - T_c^{(j)})} \geq 1 \, ,
 \end{equation}
-where $\rho_h^{(j,k)}$ is the halo field density for channel $j$ at pixel $k$ and ${\boldsymbol{\theta}}(x)$ is the Heaviside function. The threshold $T_c^{(j)}$ is determined from the empirical CDF of  $\rho_{\text{h}}^{(j,k)}$, in such a way that 
+where $\rho_h^{(j,k)}$ is the halo field density for channel $j$ at pixel $k$ and ${\boldsymbol{\theta}}(x)$ is the Heaviside function. The threshold $T_c^{(j)}$ is determined from the empirical CDF of  $\rho_{\text{h}}^{(j,k)}$, in such a way that
 \begin{equation}
-    P(\rho_{\text{h}}^{(j,k)}> T_c^{(j)}) = 0.05 \,. 
+    P(\rho_{\text{h}}^{(j,k)}> T_c^{(j)}) = 0.05 \,.
 \end{equation}
 In other words, the threshold eliminates pixels that contain low-density values, and only retains the highest 5\% of the log-density distribution in each channel. Note that for a given channel $j$, the pixels used for the computation are taken not only from the channel $j$, but also from the immediate neighboring channels, $j + 1$ and $j-1$. For the boundary channels (i.e., $j=1$ and $j=4$), we include only the next or previous channel, respectively. Now we define a pixel- and channel-specific mask $m_w^{(i,k)}$ by incorporating these weights:
 \begin{equation}
-    m_w^{i,k} = 
-\begin{cases} 
+    m_w^{i,k} =
+\begin{cases}
     w^i & \text{if } \rho_{\text{h}}^{(i,k)} > T_c^{(i)} \\
     1  & \text{if } \rho_{\text{h}}^{(i,k)} \leq T_c^{(i)} \, .
 \end{cases}
@@ -146,7 +142,7 @@ The masked loss function is then written as:
 \begin{equation} \label{eqn:lossfn}
     \mathcal{L} = \displaystyle\sum_{j=1}^4 \left(\alpha L_2^j\odot m_w^j\beta^j + \left(1-\alpha \right)L^j_q
      \right) + \lambda_w L_1^{\text{reg}}
-\end{equation} 
+\end{equation}
 with $\alpha,\beta^{j=1, \dots, 4},\lambda_w$ being hyper-parameters of the model. The loss incorporates both the mean squared error $L_2^j$ and the quantile loss $L_q^j$  between the pixel-level target density, $\rho_{\text{h}}^{(j,k)}$, and its predicted value, $\rho_{\text{pred}}^{(j,k)}$, weighed by the mask for the $L_2$ loss, with the direct product running over pixel values $k$:
 \begin{equation}
 \begin{split}
@@ -162,7 +158,7 @@ L_{2}^j &=
 \end{split}
 \end{equation}
 Here $q \in (0, 1)$ is the chosen quantile.
-The weights $\beta^j$ set the relative scaling of the contribution of a particular channel to the loss. 
+The weights $\beta^j$ set the relative scaling of the contribution of a particular channel to the loss.
 To further deal with sparsity, we add the $L_1^{\text{reg}}$ regularization term, defined as:
 \begin{equation}
     L_1^{\text{reg}} = \sum_{i=1}^{N_\text{params}} \left| w^i_{\boldsymbol{\theta}} \right|
@@ -174,26 +170,25 @@ where $\left| w^i_{\boldsymbol{\theta}} \right|$ are the neural network weights,
 
 
 \subsubsection{Training of \HALOgen}
-To train \HALOgen, we use one single simulation from the CV set and test on other simulations in the same set, with different initial seeds, but same simulation parameters. Both dark matter and halo maps are divided into $64^3$ sub-volumes, rotated, and augmented to get rotationally-equivariant training. 
+To train \HALOgen, we use one single simulation from the CV set and test on other simulations in the same set, with different initial seeds, but same simulation parameters. Both dark matter and halo maps are divided into $64^3$ sub-volumes, rotated, and augmented to get rotationally-equivariant training.
 
-We input the $64^3$ voxels $\rhoDM$ field in batches of 16 and apply the loss function {in equation}~\eqref{eqn:lossfn} to the predicted output, using the weighted mask in {equation}~\eqref{eqn:mask}. The optimizer used for training is {\texttt{RMSprop} (Root Mean Square Propagation), an adaptive gradient-based optimization algorithm that scales the learning rate for each parameter by a running average of its recent squared gradients, a standard technique in deep learning architectures.} The learning rate schedule is set as follows: the first 10 epochs are run with a learning rate of $2\times10^{-4}$; after that, we use Cosine Annealing Warm Restarts with the maximum and minimum values set to $10^{-4}$ and $3\times10^{-5}$, respectively, with a repeat cycle of 50 epochs. {The cosine annealing warm restarts changes the learning rate between the maximum and minimum value, with a cosine decay, while repeating this cycle every 50 epochs in our case.} We run the model for 260 epochs, and store the model's weights at the point in which the validation loss is lowest. We subdivide the data into training and validation set, with a $75\%$ and $25\%$ split. 
-{In equation~\eqref{eqn:lossfn},} the coefficient $\lambda_w$ of the regularization term $L_1^{\text{reg}}$ is set to $10^{-6}$. For the results in the paper, we use $\alpha = 0.6,q=0.7$ and $\beta^j=[1,2,5,8]$. The above hyper-parameters have been chosen to achieve the best predictions, after extensive testing. 
-
-
+We input the $64^3$ voxels $\rhoDM$ field in batches of 16 and apply the loss function {in equation}~\eqref{eqn:lossfn} to the predicted output, using the weighted mask in {equation}~\eqref{eqn:mask}. The optimizer used for training is {\texttt{RMSprop} (Root Mean Square Propagation), an adaptive gradient-based optimization algorithm that scales the learning rate for each parameter by a running average of its recent squared gradients, a standard technique in deep learning architectures.} The learning rate schedule is set as follows: the first 10 epochs are run with a learning rate of $2\times10^{-4}$; after that, we use Cosine Annealing Warm Restarts with the maximum and minimum values set to $10^{-4}$ and $3\times10^{-5}$, respectively, with a repeat cycle of 50 epochs. {The cosine annealing warm restarts changes the learning rate between the maximum and minimum value, with a cosine decay, while repeating this cycle every 50 epochs in our case.} We run the model for 260 epochs, and store the model's weights at the point in which the validation loss is lowest. We subdivide the data into training and validation set, with a $75\%$ and $25\%$ split.
+{In equation~\eqref{eqn:lossfn},} the coefficient $\lambda_w$ of the regularization term $L_1^{\text{reg}}$ is set to $10^{-6}$. For the results in the paper, we use $\alpha = 0.6,q=0.7$ and $\beta^j=[1,2,5,8]$. The above hyper-parameters have been chosen to achieve the best predictions, after extensive testing.
 
 
-\section{\LODI:Generating 21 cm brightness temperature fields with Latent overlap diffusion}
+
+\subsection{\LODI: Generating 21 cm brightness temperature fields with Latent overlap diffusion}
 \label{sec:paint_HI}
 
 
 
-\subsection{VDM: Variational Diffusion Model}
+\subsubsection{VDM: Variational Diffusion Model}
 \label{sec:vdm}
 
 A brief introduction to generative diffusion models is given in Sec.~\ref{sec:diffusion_intro}. Hereafter, any reference to diffusion models refers specifically to the Variational Diffusion Model \citep[VDM;][]{kingma_variational_2023}. In what follows, we describe the key features that distinguish the VDM from the standard Denoising Diffusion Probabilistic Model \citep[DDPM;][]{ho_denoising_2020}, namely the continuous-time formulation, the signal-to-noise ratio parameterisation of the noise schedule, and the variational objective that enables all components including the noise schedule itself to be learned end to end.
 
 %% ----------------------------------------------------------------
-\subsubsection{From discrete steps to continuous time}
+\paragraph{From discrete steps to continuous time}
 \label{sec:vdm_continuous}
 
 Recall from Sec.~\ref{sec:diffusion_intro} that a DDPM defines a forward (noising) process over $T$ discrete steps with a fixed variance schedule $\{\beta_t\}_{t=1}^{T}$, and that the closed-form forward marginal (Eq.~\ref{eq:forward_closed_form}) is
@@ -222,7 +217,7 @@ which is a monotonically \emph{decreasing} function of $t$: at $t=0$ the signal 
 The entire noise schedule is therefore encoded in the single scalar function $\gamma(t)$, which replaces the $T$-dimensional vector $\{\beta_t\}$ of the DDPM.
 
 %% ----------------------------------------------------------------
-\subsubsection{The variational objective}
+\paragraph{The variational objective}
 \label{sec:vdm_elbo}
 
 The name \emph{Variational} Diffusion Model reflects the fact that the training objective is derived rigorously as an Evidence Lower Bound (ELBO) on the log-likelihood of the data, rather than as a heuristic reweighting of a denoising loss. Recall from Sec.~\ref{sec:diffusion_intro} that DDPM training uses a ``simple'' loss (Eq.~\ref{eq:diffusion_loss}) that drops the SNR-dependent prefactors from the true variational bound. The VDM instead retains the full ELBO structure.
@@ -234,7 +229,7 @@ In the continuous-time limit ($T \to \infty$), \citet{kingma_variational_2023} s
 \end{equation}
 We discuss each in turn.
 
-\paragraph{Diffusion loss.}
+\subparagraph{Diffusion loss.}
 The diffusion loss is an integral over the continuous time variable,
 \begin{equation}
     \mathcal{L}_{\mathrm{diffusion}} = \frac{1}{2}\int_0^1 \!\gamma'(t)\;\,
@@ -252,7 +247,7 @@ An equivalent and widely used form of Eq.~\eqref{eq:vdm_diffusion_loss} is the \
     \label{eq:tweedie}
 \end{equation}
 
-\paragraph{Latent loss.}
+\subparagraph{Latent loss.}
 The latent loss measures how close the fully noised distribution $q(\bm{z}_1 \mid \bm{x}_0)$ is to the standard Gaussian prior $p(\bm{z}_1) = \mathcal{N}(\bm{0}, \bm{I})$:
 \begin{equation}
     \mathcal{L}_{\mathrm{latent}} = D_{\mathrm{KL}}\!\Big(q(\bm{z}_1 \mid \bm{x}_0)\;\big\|\;p(\bm{z}_1)\Big).
@@ -260,7 +255,7 @@ The latent loss measures how close the fully noised distribution $q(\bm{z}_1 \mi
 \end{equation}
 Since both distributions are Gaussian, the KL divergence is available in closed form. For a well-behaved schedule with $\gamma(1) \ll 0$ (i.e.\ the endpoint SNR is very low), $q(\bm{z}_1|\bm{x}_0)$ is already close to $\mathcal{N}(\bm{0},\bm{I})$ and this term is small.
 
-\paragraph{Reconstruction loss.}
+\subparagraph{Reconstruction loss.}
 The reconstruction loss accounts for the final decoding step from $\bm{z}_0$ to the data $\bm{x}_0$:
 \begin{equation}
     \mathcal{L}_{\mathrm{recon}} = -\,\mathbb{E}_{q(\bm{z}_0|\bm{x}_0)}\!\Big[\log p_{\bm{\theta}}(\bm{x}_0 \mid \bm{z}_0)\Big].
@@ -268,7 +263,7 @@ The reconstruction loss accounts for the final decoding step from $\bm{z}_0$ to 
 \end{equation}
 In practice, this takes the form of a Gaussian negative log-likelihood evaluated at $\bm{z}_0$, which is a very lightly noised version of $\bm{x}_0$ (since $\gamma(0) \gg 0$).
 
-\paragraph{} The total training loss is a weighted sum,
+\subparagraph{Total loss.} The total training loss is a weighted sum,
 \begin{equation}
     \mathcal{L} = \lambda_{\mathrm{diff}}\,\mathcal{L}_{\mathrm{diffusion}} + \lambda_{\mathrm{lat}}\,\mathcal{L}_{\mathrm{latent}} + \lambda_{\mathrm{rec}}\,\mathcal{L}_{\mathrm{recon}}\,,
     \label{eq:total_loss}
@@ -276,7 +271,7 @@ In practice, this takes the form of a Gaussian negative log-likelihood evaluated
 where $\lambda_{\mathrm{diff}}, \lambda_{\mathrm{lat}}, \lambda_{\mathrm{rec}}$ are scalar coefficients. Setting all three to unity recovers the exact negative ELBO, providing a principled lower bound on $\log p(\bm{x}_0)$.
 
 %% ----------------------------------------------------------------
-\subsubsection{Learned noise schedule}
+\paragraph{Learned noise schedule}
 \label{sec:vdm_schedule}
 
 A key advantage of the VDM framework is that the noise schedule $\gamma(t)$ can be \emph{learned} jointly with the denoising network $\hat{\bm{x}}_{\bm{\theta}}$. Since $\gamma'(t)$ appears as a weighting factor in the diffusion loss (Eq.~\ref{eq:vdm_diffusion_loss}), the shape of the schedule controls which noise levels receive the most training signal, while the endpoint values $\gamma(0)$ and $\gamma(1)$ set the SNR range over which the model operates. In this work, we adopt a \emph{learned linear schedule}:
@@ -287,7 +282,7 @@ A key advantage of the VDM framework is that the noise schedule $\gamma(t)$ can 
 where $b$ and $w$ are learnable scalar parameters, and $|w|$ enforces monotonicity.\footnote{Since $\gamma$ must decrease with $t$, the sign convention is chosen such that $w < 0$ and $|w|$ ensures the slope is negative. Equivalently, some implementations write $\gamma(t) = \gamma_{\max} + (\gamma_{\min} - \gamma_{\max})\,t$ with $\gamma_{\max} > \gamma_{\min}$ by construction.} This is to be contrasted with the DDPM, where the schedule $\{\beta_t\}$ is a hyperparameter (typically linear or cosine) that must be manually tuned.
 
 %% ----------------------------------------------------------------
-\subsubsection{Sampling}
+\paragraph{Sampling}
 \label{sec:vdm_sampling}
 
 Sampling from the VDM proceeds by discretising the continuous reverse process into $N_{\mathrm{steps}}$ steps. Starting from $\bm{z}_1 \sim \mathcal{N}(\bm{0},\bm{I})$, we iterate backwards through a set of times $1 = t_{N} > t_{N-1} > \cdots > t_0 = 0$:
@@ -300,7 +295,7 @@ where $\nabla_{\bm{z}}\log p(\bm{z}_{t_i})$ is the score function, estimated fro
 Crucially, the number of sampling steps $N_{\mathrm{steps}}$ is a \emph{sampling-time} hyperparameter that is independent of training. One can train the model once and then adjust $N_{\mathrm{steps}}$ at inference to trade off sample quality for computational cost. This decoupling is a direct consequence of the continuous-time formulation: the model learns a denoiser valid for all $t \in [0,1]$, and the sampling procedure merely queries it at a discrete subset of times.
 
 %% ----------------------------------------------------------------
-\subsubsection{Connection to score matching and the forward KL}
+\paragraph{Connection to score matching and the forward KL}
 \label{sec:vdm_score}
 
 The diffusion loss (Eq.~\ref{eq:vdm_diffusion_loss}) is closely related to \emph{denoising score matching}. The score of the noisy marginal, $\nabla_{\bm{z}_t}\log q(\bm{z}_t)$, can be expressed in terms of the noise as
@@ -308,7 +303,7 @@ The diffusion loss (Eq.~\ref{eq:vdm_diffusion_loss}) is closely related to \emph
     \nabla_{\bm{z}_t}\log q(\bm{z}_t) = -\frac{\bm{\epsilon}}{\sigma_t}\,,
     \label{eq:score_noise}
 \end{equation}
-so training the network to predict $\bm{\epsilon}$ is equivalent to training it to estimate the score. 
+so training the network to predict $\bm{\epsilon}$ is equivalent to training it to estimate the score.
 Since the score can be rewritten in terms of the noise via Eq.~\ref{eq:score_noise}, and assuming the network provides a good approximation $\hat{\bm{\epsilon}}_{\bm{\theta}}(\bm{z}_t, t) \approx \bm{\epsilon}$, the reverse sampling step (Eq.~\ref{eq:reverse_step}) takes the form
 \begin{equation}
     \bm{z}_{s} = \frac{\alpha_s}{\alpha_t}\left(\bm{z}_{t} - \sigma_t\, c\, \hat{\bm{\epsilon}}_{\bm{\theta}}(\bm{z}_t, t)\right) + \sqrt{(1-\alpha_s^2)\,c}\;\bm{\epsilon}\,, \qquad \bm{\epsilon} \sim \mathcal{N}(\bm{0},\bm{I}),
@@ -321,8 +316,8 @@ This connection provides an alternative interpretation of the VDM: it learns a c
 Finally, it is worth noting that since the forward diffusion process $q(\bm{z}_t | \bm{x}_0)$ is fixed and data-defined while the reverse process $p_{\bm{\theta}}(\bm{z}_{t-1} | \bm{z}_t)$ is learned, the ELBO objective corresponds to minimising the \emph{forward} KL divergence $D_{\mathrm{KL}}(q \| p_{\bm{\theta}})$ the model is trained to cover all modes of the data distribution.
 
 
-\subsection{Network architecture}
-\subsubsection{Denoising network architecture}
+\subsubsection{Network architecture}
+\paragraph{Denoising network architecture}
 \label{sec:denoise_arch}
 
 The denoising network $\hat{\bm{\epsilon}}_{\bm{\theta}}(\bm{z}_t, t, \bm{x}_{\mathrm{cond}})$
@@ -351,7 +346,7 @@ Fig.~\ref{fig:DenoiseUnet}, while the layout of a residual block is depicted in 
 \end{equation}
 where $\odot$ denotes element wise multiplication. The \texttt{net1} first extracts features from input vector $\bm{x}$, to which the time step embedding $\et$ is added via a learned linear projection so that the dimension of $\et$ matches with the extracted features. After this, a zero initialized convolution layer mixes this quantity. The final vector $\bm{h}$ produced is added to the input $\bm{x}$ and passed on to a downsampling block that reduces the spatial dimensionality of the output by 2 in each of the three axes.
 
-Note that we use group normalization instead of the more commonly used batch normalization. The reason is because our batches(number of training samples the gradient descent algorithm averages over per step) are quite small, and batch normalization can get quite noisy with low batch sizes. 
+Note that we use group normalization instead of the more commonly used batch normalization. The reason is because our batches(number of training samples the gradient descent algorithm averages over per step) are quite small, and batch normalization can get quite noisy with low batch sizes.
 
 \begin{figure}[t]
     \centering
@@ -396,10 +391,10 @@ modulate its behaviour as a function of the noise level.
 
 
 
-\subsection{Building the 21 cm temperature training map}
+\subsubsection{Building the 21 cm temperature training map}
 
 
-To produce the 21 cm temperature map for training, we proceed as follows: {we obtain the neutral hydrogen fraction $x_{\text{HI}, i}$} and the gas particle mass $m_{g, i} \,  [\mathrm{M}_\odot]$, for each gas particle $i$ in the hydrodynamic simulation, from which we {first compute the HI mass per particle, $\mathrm{M}_{\text{HI}, i}$, as: } 
+To produce the 21 cm temperature map for training, we proceed as follows: {we obtain the neutral hydrogen fraction $x_{\text{HI}, i}$} and the gas particle mass $m_{g, i} \,  [\mathrm{M}_\odot]$, for each gas particle $i$ in the hydrodynamic simulation, from which we {first compute the HI mass per particle, $\mathrm{M}_{\text{HI}, i}$, as: }
 {
 \begin{equation}
     \mathrm{M}_{\text{HI}, i} = m_{g,i}x_{\text{HI}, i}X \, ,
@@ -407,10 +402,10 @@ To produce the 21 cm temperature map for training, we proceed as follows: {we ob
 }
 {where $X$ is the hydrogen mass fraction, which in this CAMELS simulations is set to $0.76$}. In addition, since the simulations (as detailed below) do not include self-shielding effects for star-forming particles, we manually set $x_{\text{HI}, i} = 1$ for particles with star formation rate larger than zero. {The reason for having a separate star formation rate parameter on top of the star particles is that in the underlying multiphase ISM model, self-shielded gas is represented as a gas element until stochastically converted to a star particle, where the conversion probability depends on the star formation timescale~\citep{Springel_2003}.} This simple and effective prescription, also employed in the post-processing of the CAMELS simulations~\citep{villaescusa-navarro_camels_2022}, assumes that all the star-forming particles are fully self-shielded against ionizing radiation. As shown in ~\citet{villaescusa-navarro_ingredients_2018}, this assumption results in a good match to observational data sets like abundance of HI and column density distribution of Damped Lyman-$\alpha$ systems.
 
-We then use the same CIC procedure described above to interpolate 
+We then use the same CIC procedure described above to interpolate
 $\mathrm{M}_{\text{HI},i}$ to a continuous mass field, $\mathrm{M}_{\text{HI}}$, after which we divide each voxel by its volume to obtain the density field $\rho_{\mathrm{HI}}$. The 21 cm brightness temperature in the post-reionization universe is given to a good approximation by the following expression in~\citet{villaescusa-navarro_ingredients_2018}:
 \begin{equation}\label{eq:tb}
-    T_b(\bm{x}) = 189\,h\left(\frac{H_0(1+z)^2}{H(z)}\right)\frac{\rho_{\mathrm{HI}}(\bm{x})}{\rho_c} ~[\text{mK}]\, , 
+    T_b(\bm{x}) = 189\,h\left(\frac{H_0(1+z)^2}{H(z)}\right)\frac{\rho_{\mathrm{HI}}(\bm{x})}{\rho_c} ~[\text{mK}]\, ,
 \end{equation}
 where $H_0$ is the Hubble Lemaître constant today, $\rho_{\mathrm{HI}}(\bm{x})$ is the interpolated neutral hydrogen density at cell location $\bm{x}$, $z$ is the redshift, $H(z)$ is the Hubble function at redshift $z$, $T_b$ is expressed in mK, and $H_0 = 100\,h$ km/s/Mpc. The quantity $\rho_c = \frac{3H_0^2}{8\pi G}$ denotes the critical density today.
 
@@ -420,8 +415,7 @@ Once the maps are created, we smooth them with a Gaussian kernel of fixed radius
 
 
 
-
-\subsection{Loss function}
+\subsubsection{Loss function}
 \label{sec:lodi_loss}
 
 When training \LODI, we sample a $21\,\mathrm{cm}$ brightness-temperature map $\tb$ from the training set and apply the forward diffusion process (Eq.~\ref{eq:vdm_forward}), setting $\bm{x}_0 = \tb$ and $\bm{x}_t = \tb^t$. We use $T = 50$ timesteps.
@@ -433,42 +427,34 @@ During training, the denoising network predicts the noise by minimizing Eq.~\ref
     \left[ \bigl(\exp\!\bigl(\gamma(t-1) - \gamma(t)\bigr) - 1\bigr)
     \left\|\bm{\epsilon} - \hat{\bm{\epsilon}}_{\bm{\theta}}(\tb^t, t)\right\|_2^2 \right],
 \end{equation}
-where the expectation is over the noise distribution and the uniform discrete 
+where the expectation is over the noise distribution and the uniform discrete
 time distribution.
 
-During generation, we sample from $\tb^T \sim \mathcal{N}(\bm{0},\bm{I})$ and 
-iteratively denoise using the learned distribution 
-$p_{\bm{\theta}}(\tb^{t-1} \mid \tb^t, \rhoDM, t)$ to produce 
+During generation, we sample from $\tb^T \sim \mathcal{N}(\bm{0},\bm{I})$ and
+iteratively denoise using the learned distribution
+$p_{\bm{\theta}}(\tb^{t-1} \mid \tb^t, \rhoDM, t)$ to produce
 samples $\bm{T}_b^0 \sim p(\bm{T}_b \mid \rhoDM)$. The ancestral sampling (Eq.~\ref{eq:ancestral_sampling}) therefore turns into :
 \begin{equation}
 \label{eq:lodi_ancestral}
-    \bm{T}_b^s = \frac{\alpha_s}{\alpha_t}\left(\tb^t - \sigma_t\,c\,\hat{\bm{\epsilon}}_{\bm{\theta}}(\tb^t, t)\right) 
+    \bm{T}_b^s = \frac{\alpha_s}{\alpha_t}\left(\tb^t - \sigma_t\,c\,\hat{\bm{\epsilon}}_{\bm{\theta}}(\tb^t, t)\right)
     + \sqrt{(1-\alpha_s^2)\,c}\,\bm{\epsilon},
 \end{equation}
 
 
-\subsubsection{Training of \LODI}
- 
+\paragraph{Training of \LODI}
+
 
 We train \LODI\ on 5 simulations of the CV set from CAMELS, each with a different initial seed. We process the 5 simulations as explained above, and divide them into $32^3$ voxel sub-volumes.
-To enforce rotational equivariance, we augment each simulation cube with all symmetry-equivalent flips and 90° rotations. Training on more simulations is necessary to account for cosmic variance in the large scales comparable to the box size and also to train on more halos of large masses, especially $M_\text{halo}>10^{12}M_\odot$. To compress the dynamic range of the sparse HI field, we train the network in 
+To enforce rotational equivariance, we augment each simulation cube with all symmetry-equivalent flips and 90° rotations. Training on more simulations is necessary to account for cosmic variance in the large scales comparable to the box size and also to train on more halos of large masses, especially $M_\text{halo}>10^{12}M_\odot$. To compress the dynamic range of the sparse HI field, we train the network in
 logarithmic space of the fields. This expands the raw training set substantially and would correspondingly increase training time. We therefore apply a targeted subsampling strategy: because HI emission is concentrated around dark matter halos particularly massive ones and thus sparse, we preferentially draw subvolumes that contain objects in the higher mass halo channels. We define important regions here as regions where $\log \rho_h\geq 10$, since this density value is about $10^3$ times smaller than the minimum density value in our dataset, prior to gaussian smoothing. Values smaller than that are small enough that they do not contribute to any meaningful HI content. To maintain diversity we also include $50\%$ of sub-volumes centered on the more numerous lower-mass halos, the first 2 mass bins in this case. This balanced selection reduces the total training data sets from $\approx$ 410 000 to $\approx$ 250 000, almost halving the  training time without degrading the representativeness of the data, while increases the relative importance of the larger mass halos as it is seen more frequently by the neural network.  We finally create a training and validation split of $75\%$ and $25\%$, respectively.
 
 
+\subsection{Generating larger volumes with latent overlap}
 
-
-
-
-\section{Generating larger volumes with latent overlap}
-
-
-
-\subsection{Generation over larger volumes with latent overlap}
-
-It is not possible to input the entire $25^3(\Mpch)^3$ simulation box, corresponding to $256^3$ voxels to our network, because of memory constraints. Such data cube would require several terabytes of GPU memory to train. Instead, we divide the domain into 512 smaller $32^3$ voxels subvolumes, with the view of generating for each its 21 cm field with the trained the diffusion model, and then combine them at the end to generate the full volume. 
+It is not possible to input the entire $25^3(\Mpch)^3$ simulation box, corresponding to $256^3$ voxels to our network, because of memory constraints. Such data cube would require several terabytes of GPU memory to train. Instead, we divide the domain into 512 smaller $32^3$ voxels subvolumes, with the view of generating for each its 21 cm field with the trained the diffusion model, and then combine them at the end to generate the full volume.
 
 \subsubsection{Latent overlap method}
-The naive solution would be to generate the brightness temperature field in each $32^3$ sub-volume, then tile them to create the target, $256^3$ volume we call this approach `tiling'. However, tiling introduces artificial, periodic discontinuities at the boundaries of each $32^3$ voxel cube, arising because the brightness temperature field $\tb$ is sampled from the conditional distribution  $\tb\sim p(\tb|\rhoh)$, which depends solely on the $32^3$ halo field $\rhoh$, with no reference to adjacent boxes. 
+The naive solution would be to generate the brightness temperature field in each $32^3$ sub-volume, then tile them to create the target, $256^3$ volume we call this approach `tiling'. However, tiling introduces artificial, periodic discontinuities at the boundaries of each $32^3$ voxel cube, arising because the brightness temperature field $\tb$ is sampled from the conditional distribution  $\tb\sim p(\tb|\rhoh)$, which depends solely on the $32^3$ halo field $\rhoh$, with no reference to adjacent boxes.
 
 \begin{figure*}[h!]
    \centering
@@ -477,14 +463,14 @@ The naive solution would be to generate the brightness temperature field in each
    \label{fig:cont_proof_comp}
 \end{figure*}
 
-To address this, we adapt the inpainting method of ~\citet{lugmayr_repaint_2022}, which in our work we call `latent overlap' approach. 
-The first box, $B_1$, is generated by starting with a Gaussian noise $\boldsymbol{\epsilon_1}$, to obtain a sample $\bm{T}^0_{B_1}$. While generating this box in $T=50$ steps, a set of $T$ intermediate latent maps are produced using Eq.~\eqref{eq:lodi_ancestral}: $[\bm{T}^1_{B_1},\bm{T}^2_{B_1},\dots,\bm{T}^T_{B_1}]$. These intermediate latent images can be interpreted as discrete snapshots of the evolving $\bm{T}_b$  distribution under the diffusion process, forming a trajectory from random noise to the final sampled field. 
+To address this, we adapt the inpainting method of ~\citet{lugmayr_repaint_2022}, which in our work we call `latent overlap' approach.
+The first box, $B_1$, is generated by starting with a Gaussian noise $\boldsymbol{\epsilon_1}$, to obtain a sample $\bm{T}^0_{B_1}$. While generating this box in $T=50$ steps, a set of $T$ intermediate latent maps are produced using Eq.~\eqref{eq:lodi_ancestral}: $[\bm{T}^1_{B_1},\bm{T}^2_{B_1},\dots,\bm{T}^T_{B_1}]$. These intermediate latent images can be interpreted as discrete snapshots of the evolving $\bm{T}_b$  distribution under the diffusion process, forming a trajectory from random noise to the final sampled field.
 
 When we next consider an adjacent box, $B_2$, we want to enforce that its generation process follow a `similar' trajectory as $B_1$. For this, we partially overlap boxes $B_2$ onto $B_1$ such that
 \[
 \text{Vol}(B_1 \cap B_2) = V_{\text{overlap}}
 \]
-where $V_{\text{overlap}}$ is the overlapping volume and is defined as the fraction of one box (specified below). {For our work, the overlap volume or fraction is specified in section \hyperref[21cm_overlap]{2.4.2}.} Now, at every $t$-th denoising step of $B_2$, we replace $\bm{T}^t_{B_2}$ with the previously-generated $\bm{T}^t_{B_1}$ in the region $V_{\text{overlap}}$, thus obtaining $\bm{T}^{t*}_{B_2}$, which is identical to $\bm{T}^t_{B_1}$ in the overlap volume. This new $\bm{T}^{t*}_{B2}$ is then denoised using the denoising U-net to obtain $\bm{T}^{t-1}_{B_2}$. 
+where $V_{\text{overlap}}$ is the overlapping volume and is defined as the fraction of one box (specified below). {For our work, the overlap volume or fraction is specified in section \hyperref[21cm_overlap]{2.4.2}.} Now, at every $t$-th denoising step of $B_2$, we replace $\bm{T}^t_{B_2}$ with the previously-generated $\bm{T}^t_{B_1}$ in the region $V_{\text{overlap}}$, thus obtaining $\bm{T}^{t*}_{B_2}$, which is identical to $\bm{T}^t_{B_1}$ in the overlap volume. This new $\bm{T}^{t*}_{B2}$ is then denoised using the denoising U-net to obtain $\bm{T}^{t-1}_{B_2}$.
 Mathematically, the updated state of \( B_2 \) at the \(t\)-th denoising step is given by:
 \[
 \bm{T}^{t*}_{B_2} = M_{\text{overlap}} \bm{T}^t_{B_2} + (1 - M_{\text{overlap}}) \bm{T}^t_{B_1} \, ,
@@ -492,7 +478,7 @@ Mathematically, the updated state of \( B_2 \) at the \(t\)-th denoising step is
 where \( M_{\text{overlap}} \) is the overlap mask defined as:
 \[
 M_{\text{overlap}}(\bm{x}) =
-\begin{cases} 
+\begin{cases}
 1, & \text{if } \bm{x} \in V_{\text{overlap}} \\
 0, & \text{otherwise}
 \end{cases}
@@ -525,7 +511,7 @@ Performing this latent overlap step ensures that the entire image $\bm{T}^{i*}_{
     \State $\bm{T}^{t*}_{B_2} = M_{\text{overlap}} \bm{T}^t_{B_2} + (1 - M_{\text{overlap}}) \bm{T}^t_{B_1}$
     \State $\boldsymbol{\epsilon_2}\sim \mathcal{N}(\textbf{0}, \textbf{I})$
     \State $\bm{T}_{B_2}^{s} = \frac{\alpha_s}{\alpha_t}\left(\bm{T}_{B_2}^{t*}-\sigma_t c \boldsymbol{\hat{\epsilon}_{\boldsymbol{\theta}}}(\bm{T}_{B_2}^{t*}; t)\right) + \sqrt{(1-\alpha_s^2)c}\boldsymbol{\epsilon_2}$
-    
+
 \EndFor
 \State \textbf{return} $\bm{T}_{B_2}^0$
 \end{algorithmic}
@@ -562,19 +548,12 @@ In the subsequent Stages $(5,6~\text{and}~ 7)$, additional sub-volumes are gener
 The overall output of our generative pipeline is shown in Fig.~\ref{fig:overall_output}. We start with an unseen  dark matter density field, shown in the top left panel, run it through \HALOgen\ (whose intermediate halo mass density maps are shown in the second column of figure~\ref{fig:Halo_finding}), and then produce the brightness temperature map with \LODI\ (bottom right panel of Fig.~\ref{fig:overall_output}). Using the naive Tiling approach (bottom left panel of Fig.~\ref{fig:overall_output}), the discontinuity between training sub-volumes is evident (corners of boundaries are indicated by green crosses for better visualization).
 
 
-
-
-
-
-
-
-
 \section{Results}
 \label{results}
-In this section, we demonstrate the performance of the entire generative pipeline, producing HI intensity maps from previously unseen dark matter simulation maps. We validate our results using the CV set of the IllustrisTNG simulations at $z=0$, with the same parameters for the simulations as the training maps, but with different initial seeds. We postpone the study of generalization capabilities to other cosmologies to a future, dedicated work. 
+In this section, we demonstrate the performance of the entire generative pipeline, producing HI intensity maps from previously unseen dark matter simulation maps. We validate our results using the CV set of the IllustrisTNG simulations at $z=0$, with the same parameters for the simulations as the training maps, but with different initial seeds. We postpone the study of generalization capabilities to other cosmologies to a future, dedicated work.
 
 \subsection{Performance of \HALOgen }
-The output of \HALOgen is shown in figure~\ref{fig:Halo_finding}, split in the four mass channels (top to bottom), with the input dark matter map shown on the top left of figure~\ref{fig:overall_output}. We reiterate that this input map was unseen during training, as it was generated with a different seed (but same cosmological and astrophysical parameters as the training map). 
+The output of \HALOgen is shown in figure~\ref{fig:Halo_finding}, split in the four mass channels (top to bottom), with the input dark matter map shown on the top left of figure~\ref{fig:overall_output}. We reiterate that this input map was unseen during training, as it was generated with a different seed (but same cosmological and astrophysical parameters as the training map).
 
 Visually, the predicted pixel values for the halo mass density (left column) look very close to the target maps (center column), except for the smallest mass range (first row). This can be more precisely quantified by comparing the distribution of log-density values between the target and predicted $25^3$ $\left(\Mpch\right)^3$ box (right column). While we observe a consistent under-prediction in the mean value of the smallest halo mass range (albeit still within the $16-84$ percentile band), the agreement for the other mass ranges is excellent. We trace back the relatively poorer performance for the smallest mass halo density to our definition of masked loss: as discussed above, a lower weight is given to pixels of the smallest halos, since they are the most abundant ones. Therefore, we can expect that the loss function puts greater attention to faithfully reconstructing the density of larger mass halos. We plot the median instead of the mean since in the post-processing of the output halo maps, we set pixel values below a threshold of $\log\rho_h = 9.5$ to zero, which in the pixel comparison plot skews the mean value of the pixel distribution. The median values are agnostic to these outlier near zero values. The reason for setting this cutoff is because such low predicted values are not possible given the training data and lie below the lower density limit.
 
@@ -596,22 +575,22 @@ The dimensionless power spectrum is accordingly defined as:
 \begin{equation}
   P_{\hat{T}_b}(k) = \left\langle \hat{T}_b(\bm{k}) \cdot \hat{T}_b^{*}(\bm{k}) \right\rangle\,,
 \end{equation}
-where $\hat{T}_b(\bm{k})$ is the Fourier transform of $\hat{T}_b(\bm{x})$ and 
+where $\hat{T}_b(\bm{k})$ is the Fourier transform of $\hat{T}_b(\bm{x})$ and
 $k = |\bm{k}|$. This dimensionless formulation allows direct comparison of small-scale fluctuations across different simulations.
 
 To assess the performance of \LODI, we compute the $21\,\mathrm{cm}$ power spectrum produced by our pipeline and compare it to the ground truth via the residual:
 \begin{equation}
   \Delta P_{\hat{T}_b}(k) = P_{\hat{T}_b}^{\mathrm{gen}}(k) - P_{\hat{T}_b}^{\mathrm{true}}(k)\,,
 \end{equation}
-where $P_{\hat{T}_b}^{\mathrm{gen}}(k)$ and $P_{\hat{T}_b}^{\mathrm{true}}(k)$ 
-denote the \LODI-generated and ground-truth simulation power spectra, 
+where $P_{\hat{T}_b}^{\mathrm{gen}}(k)$ and $P_{\hat{T}_b}^{\mathrm{true}}(k)$
+denote the \LODI-generated and ground-truth simulation power spectra,
 respectively. Since the diffusion model was trained on Gaussian smoothed maps, the comparison plots and power spectra calculations are also done by Gaussian smoothing the ground truth maps with the same filter radius of $R = 0.2 ~\Mpch$. Note that when testing our model, we compare against maps that include HI from all the halos across the full halo-HI mass range. This allows us to verify
 that the specific halo-mass threshold used during training does not
 significantly affect the recovered $21\,\mathrm{cm}$ signal.
 
 Figure~\ref{fig:pk_dif_many} illustrates the end to end performance by showing the residual power spectrum obtained by applying the whole pipeline on 7 previously unseen dark matter density fields (i.e., with different initial seeds). For each of the 7 dark matter fields, we first produce the halo maps for each using \HALOgen, and then generate 5 realizations of brightness temperature maps.
 
-In Figure~\ref{fig:pk_same_many}, we present an example $T_b$ map generated using the full pipeline, alongside its corresponding ground-truth map, unseen before during training, each averaged along the 
+In Figure~\ref{fig:pk_same_many}, we present an example $T_b$ map generated using the full pipeline, alongside its corresponding ground-truth map, unseen before during training, each averaged along the
 third axis. We also plot the dimensional power spectrum $P_{\hat{T}_b}$, computed from 20 \LODI\ realizations conditioned on the same halo maps produced by \HALOgen. Visually, the generated and true maps show considerable matching, and the power spectra remain in good agreement up to $k \simeq 10\hMpci$, as can also been seen in the residual values shown in the bottom panel. This result showcases the intrinsic variance of the generative model \LODI, as seen in the spread of the power spectra residuals. At high wavenumbers the predicted power spectrum exhibits excess power relative to the truth. This arises because the generated 21 cm maps display more compact radial profiles than the true maps, which are comparatively more extended and diffuse. Since \LODI is conditioned on halo maps only, the network tends to concentrate 21 cm emission within halo regions, producing higher central intensities and a steeper radial decline. This enhanced contrast amplifies small-scale variance and leads to the observed excess power at higher wave modes.
 
 
@@ -634,21 +613,19 @@ third axis. We also plot the dimensional power spectrum $P_{\hat{T}_b}$, compute
     \label{fig:pk_dif_many}
 \end{figure*}
 
-To generate these results, \HALOgen~was trained for about 21 hours on a single A100 GPU. The training of \LODI\ took  600,000 iterations, using a batch size of 16. The total training time was around 30 hours, using a single A100 GPU. 
-When generating, the total time taken by the pipeline to produce one temperature map for the whole $256^3$ volume starting from the dark matter field is 106 seconds (16 seconds for \HALOgen, 90 seconds for \LODI). 
+\subsection{Computational cost}
 
-
+To generate these results, \HALOgen~was trained for about 21 hours on a single A100 GPU. The training of \LODI\ took  600,000 iterations, using a batch size of 16. The total training time was around 30 hours, using a single A100 GPU.
+When generating, the total time taken by the pipeline to produce one temperature map for the whole $256^3$ volume starting from the dark matter field is 106 seconds (16 seconds for \HALOgen, 90 seconds for \LODI).
 
 
 \section{Conclusions}
 \label{conclusions}
 In this work, we presented a two-steps generative pipeline to generate and inpaint large, 3 dimensional 21 cm intensity maps, starting from dark matter only simulations. Although this work applied the method to  25$^3$ $\left(\Mpch\right)^3$ simulations, it can be extended to inpaint simulations of any size, provided the resolution is the same as the training set simulation. In the first step, the \HALOgen\  algorithm uses a U-Net to produce high-fidelity halo maps, subdivided in mass channels (bins); in the second step, \LODI\ uses a conditional variational diffusion model coupled with a latent overlap method to paint the 21 cm signal on top of the halo field. We also developed a method to parallelize the generation of sub-volumes of intensity maps coherently into a larger volume simulation, without having to modify the diffusion model. Thus, this method is agnostic to the type of diffusion model used. A more powerful and general method is being investigated and will be demonstrated in a dedicated future work.
 
-To create the halo maps, we use an attention ResUnet along with a weighted masking technique, to enforce halo separation based on halo mass. In this work, we create 4 halo maps from a single dark matter density field, which we then use as a conditional in our diffusion model -- a variational diffusion model that learns to denoise a Gaussian field, conditioned on the 4 halo maps, to produce the 21 cm intensity maps at redshift $z=0$. 
+To create the halo maps, we use an attention ResUnet along with a weighted masking technique, to enforce halo separation based on halo mass. In this work, we create 4 halo maps from a single dark matter density field, which we then use as a conditional in our diffusion model -- a variational diffusion model that learns to denoise a Gaussian field, conditioned on the 4 halo maps, to produce the 21 cm intensity maps at redshift $z=0$.
 
 The pipeline produces statistically unbiased estimates of the 21 cm power spectrum, and achieves a $\leq 10\%$ accuracy on average, up to $k \simeq 10\,\it{h} ~\text{Mpc}^{-1}$, as can be seen in figure~\ref{fig:pk_dif_many}. We test the model on multiple unseen simulations, with different initial seeds, showcasing the robustness of the model to capture and reproduce features well into the non-linear small-scale regime.
 \vspace{\baselineskip}
 
-% Although the model performs well on simulations that share the same redshift, cosmology, and astrophysical prescriptions, it is essential to test its ability to generalize across various cosmological parameters and redshift. Such a robust model would enable parameter inference and simulation-based, likelihood-free analyses, and would allow us to build full past-light-cone mocks, that could be compared with data, potentially increasing the information retrieval many-folds compared with simpler (and lossy) summary statistics, like the power spectrum. In addition, forthcoming large-volume HI surveys will enable high-signal-to-noise cross-correlations between 21 cm intensity maps and galaxy catalogs ~\citep{Cunnington:2022}, an approach that mitigates foreground systematics and can tighten constraints on both cosmology and galaxy astrophysics. Our pipeline can therefore be extended to produce realistic HI mocks for these surveys, providing a test-bed for cross-correlation analyses and improved joint constraints on cosmological and astrophysical parameters. We also foresee to extend the pipeline presented here by coupling $\HALO$ and $\LODI$ with \texttt{JERALD}, a Lagrangian deep learning method that produces high-resolution dark matter, stellar mass and neutral hydrogen maps from lower-resolution approximate N-body simulations~\citep{JERALD}, thereby further accelerating the end-to-end analysis. 
-
-% Furthermore, it will be interesting to investigate adapting the diffusion model to cope with realistic foregrounds and instrumental nuisances (like the role of the beam, wedge reconstruction, etc.), both in terms of cross-correlation with galaxies and auto-correlation of the 21 cm brightness temperature. Finally, from the fundamental physics perspective, the excellent performance of \LODI\ even at very small scales makes it an ideal tool to explore non-standard dark matter scenarios, in which the dark matter could have thermal velocities or interactions with baryons and radiation. 
+% Although the model performs well on simulations that share the same redshift, cosmology, and astrophysical prescriptions, it is essential to test its ability to generalize across various cosmological parameters and redshift. Such a robust model would enable parameter inference and simulation-based, likelihood-free analyses, and would allow us to build full past-light-cone mocks, that could be compared with data, potentially increasing the information retrieval many-folds compared with simpler (and lossy) summary statistics, like the power spectrum. In addition, forthcoming large-volume HI surveys will enable high-signal-to-noise cross-correlations between 21 cm intensity maps and galaxy catalogs ~\citep{Cunnington:2022}, an approach that mitigates foreground systematics and can tighten constraints on both cosmology and galaxy astrophysics. Our pipeline can therefore be extended to produce realistic HI mocks for these surveys, providing a test-bed for cross-correlation analyses and improved joint constraints on cosmological and astrophysical parameters. We also foresee to extend the pipeline presented here by coupling $\HALO$ and $\LODI$ with \texttt{JERALD}, a Lagrangian deep learning method that produces high-resolution dark matter, stellar mass and neutral hydrogen maps from lower-resolution approximate N-body simulations~\citep{JERALD}, thereby further accelerating the end-to-end analysis.

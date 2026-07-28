@@ -1,37 +1,23 @@
-% ============================================================
-% chapters/ch2_cosmofold/cosmofold.tex
-% ============================================================
+
 \chapter{\FOLD: Large-Volume Cosmological Field Generation}
 \label{ch:cosmofold}
-\section{The problem statement}
-Cosmological simulations are essential tools for understanding the formation and evolution of structure in the Universe. They allow us to explore the complex interplay of gravitational, hydrodynamic, and astrophysical processes shaping the distribution of matter from large down to highly non-linear galactic and sub-galactic scales. However, high-fidelity hydrodynamical simulations are computationally very expensive, limiting their applicability when the parameter space is large  in inference studies. For example, the IllustrisTNG simulations~\citep{nelson2021illustristngsimulationspublicdata,Pillepich_2017} required approximately 35 million CPU-hours for the largest \TNG run and about 18 million CPU-hours for TNG100, while EAGLE~\citep{EAGLE} consumed roughly 4.5 million CPU-hours.
-\vspace{\baselineskip}
-
-Such computational demands become particularly prohibitive for cosmological or astrophysical field-level inference and simulation-based inference (SBI) frameworks, which require large ensembles of conditional forward simulations to explore the parameter spaces. Recent works have shown promising applications, including the cosmological context~\citep{angulo_large-scale_2022,jeffrey_likelihood-free_2020,bairagi2025simulationsneedsimulationbasedinference,Zeghal_2025,karchev2023simsimssimulationbasedsupernovaia,Saxena_2024,tucci24}. However, their applicability remains limited by the requirement of generating sufficient high-fidelity simulations. This computational bottleneck underlines the need for fast, accurate surrogate models capable of reproducing cosmological fields at a fraction of the cost not limited to dark matter, but crucially including baryonic observables that can be directly constrained with data. Recent works have explored various approaches to modeling cosmological fields using generative adversarial networks \citep[e.g.,][]{andrianomena2022}, probabilistic methods \citep{ono_debiasing_2024}, and diffusion-based techniques \citep[e.g.,][]{rouhiainen_cosmology_2024,mishra2025largefastaccuratehi}. These methods aim to overcome the computational bottlenecks and enable fast sampling of cosmic structures, preserving both large-scale coherence and small-scale physical accuracy. A related goal, currently hampered by similar computational bottlenecks, is to complement traditional summary statistics (such as two- and three-point statistics) with more informative data-driven summaries that best capture non-Gaussian features of the evolved non-linear fields (e.g.~\cite{bairagi2025patchnethierarchicalapproachneural,Borg,lanzieri2025optimalneuralsummarisationfullfield,Bayer_2025}.
-
-\vspace{\baselineskip}
-
-In recent years, machine learning techniques, and in particular generative models, have emerged as powerful emulators to reproduce cosmological and astrophysical fields~\citep{perraudin2019cosmologicalnbodysimulationschallenge,Li_2021,jamieson_field-level_2023,Rigo_2025,hassan_hiflow_2022,andrianomena_emulating_2022,sharma25,bernardini2025ember2,andrianomena2024cosmologicalmultifieldemulator}. Among them, diffusion models—a class of stochastic generative models that generate data by learning to reverse a gradual noising process by iteratively denoising corrupted data samples—have gained significant attention due to their ability to produce high-fidelity, diverse outputs~\citep{sohl-dickstein_deep_2015, ho_denoising_2020, kingma_variational_2023}. These models have been successfully applied in astrophysics and cosmology, for example to emulate the baryonic processes affecting galaxy properties \citep{Chadayammuri_2023} or more in general to augment  the resolution of  simulations by using  a smaller set of high-resolution ones \citep{kodi20}.
 
 
+\section{Problem statement}
 
-Despite these advances, a major challenge remains in scaling generative models to arbitrarily large, high-fidelity cosmological volumes, especially when constrained by GPU memory and computational cost. Moreover, the evolution of cosmic structure is inherently non-local, where long-range gravitational interactions couple distant regions and baryonic feedback processes, such as those driven by supernovae or active galactic nuclei, can redistribute matter over large scales. Accurately modeling these effects requires the network to learn global dependencies rather than simple local conditional relationships, which becomes particularly challenging when no similar low-resolution reference field is available to guide the generation.
+High-fidelity hydrodynamical simulations are far too expensive to run in the numbers required by field-level and simulation-based inference, a bottleneck already established in Section~\ref{sec:sim_bottleneck} of the Introduction, together with the case for fast, learned surrogates as the way around it. Section~\ref{sec:ml_field_level} previewed \FOLD itself as one such surrogate, extending the diffusion-based approach of Chapter~\ref{ch:lodi}  of \LODI to large-volume field generation, as such we do not repeat that general motivation here.
 
-\vspace{\baselineskip}
+Beyond \LODI, recent work has explored a range of approaches to modeling cosmological fields with generative adversarial networks~\citep{andrianomena2022}, probabilistic methods~\citep{ono_debiasing_2024}, and diffusion-based techniques~\citep[e.g.,][]{rouhiainen_cosmology_2024,ono_debiasing_2024}. Diffusion models specifically have already been used to emulate baryonic processes affecting galaxy properties~\citep{Chadayammuri_2023} and to augment simulation resolution from a smaller set of high-resolution runs~\citep{kodi20}.
 
-\section{A plug in solution}
+What none of these address is the specific limitation this chapter targets: \LODI's own overlapping sub-volume scheme for generating fields larger than its training box. That approach works well for localized structures, but fails for extended ones, dark matter filaments in particular, and its overlap requirement inflates the number of sub-volumes that must be generated by as much as 40\% (e.g.\ from 512 to 729 for a $256^3$-voxel target), with a matching increase in compute time (Section~\ref{subsect:contgen} gives the full mechanism and numbers).
 
-To overcome these limitations, we introduce \FOLD (for ``Cosmological Field Overlap Latent Diffusion''), a novel technique building on the variational diffusion model framework \LODI presented in~\cite{mishra2025largefastaccuratehi}. \FOLD  enables the rapid and accurate generation of large three-dimensional cosmological fields by conditioning the denoising process on the underlying large scale matter distribution, represented by either the stellar density or dark matter density fields. We demonstrate the capability of our approach by generating gas temperature fields conditioned on dark matter density, as well as dark matter density fields reconstructed from sparse stellar density field distribution of IllustrisTNG TNG300 simulations. 
-These two applications are particularly challenging and relevant since they are both intrinsically sensitive to small scale physical processes (star formation and galactic feedback), which also affect intermediate cosmological scales. 
-Another reason for the choice of these two applications and their importance is how they are manifested in terms of a summary statistics like the power spectrum. It is well known that baryonic processes, as simulated in state-of-the-art hydrodynamical simulations, determine a suppression of power at $k\sim~1\, h/$Mpc  caused by feedback, and a steep increase of power at smaller scales $k\gg 1\,h/$Mpc produced by stars forming in the innermost parts of the (dark matter) haloes \citep{chisari19,schneider15,vandaalen20}. While the exact amount of suppression and increase of power varies among the different sets of simulations, the shape of the effects is a common prediction of most of the models.
-Our choices for the temperature field and stellar fields is a natural choice to address these two different scales and verify the performance of our method in these regimes.
+\section{A plug-in solution}
 
-The model is trained on just $\approx1\%$ and validated on $\approx0.5\%$ of the simulation volume, before being applied to synthesize complete large-scale realization, with excellent performance across 1-, 2- and 3-points statistics. \FOLD naturally enforces periodic boundary conditions and surpasses previous overlapping patch-based approaches by eliminating edge artifacts and maintaining structural coherence even when conditioned on the highly sparse stellar input.
-
-This chapter is structured as follows: in Section~\ref{sec:methods}, we describe the methodology, the network modifications and the datasets used. Section~\ref{sec:results} presents results on both test datasets and larger simulation volumes. We conclude with a discussion in Section~\ref{sec:conclusions}.
+To address this, we introduce \FOLD (``Cosmological Field Overlap Latent Diffusion''), which replaces \LODI's overlapping sub-volumes with a sliding-window generation scheme that maintains coherence implicitly across the whole diffusion trajectory, respecting periodic boundary conditions of simulations, and without needing an overlap prescription at all. This chapter is structured as follows: Section~\ref{sec:methods} describes the methodology, the network modifications, and the datasets used; Section~\ref{sec:results} presents results on unseen test simulations and on volumes up to 100 times larger than \FOLD was trained on; we conclude in Section~\ref{sec:conclusions}.
 
 
-\section{Data and model architecture}
+
+\section{Methodology}
 \label{sec:methods}
 
 In this section, we give an overview of the datasets used for our work and how exactly are they processed for training. We also present modifications to the \LODI diffusion model that we presented in the previous Chapter.
@@ -53,10 +39,10 @@ This work also introduces improvement to the \LODI approach in the form of optio
 \subsection{Training dataset}
 For this work, we use two separate simulated datasets. The CAMELS IllustrisTNG subset (henceforth \CAMELS) was introduced in Chapter~\ref{ch:lodi} and used for training the conditional field generation model. Here, we use the same CV set with fiducial cosmological and astrophysical parameters to train \FOLD.
 
-The second dataset is IllustrisTNG300-2 (henceforth \TNG)~\citep{nelson2021illustristngsimulationspublicdata}, a full hydrodynamical simulation in a comoving volume of side $205\Mpch$ 
+The second dataset is IllustrisTNG300-2 (henceforth \TNG)~\citep{nelson2021illustristngsimulationspublicdata}, a full hydrodynamical simulation in a comoving volume of side $205\Mpch$
 with $1250^3$ gas and dark matter particles. This larger-volume simulation shares the same cosmological parameters as \CAMELS and fiducial feedback prescription ($\mathbf{A}=1$). We use \TNG to demonstrate upscaling: the ability of \FOLD to generate target fields for volumes substantially larger than those in the training set.
 
-All 3D fields are extracted at redshift $z=0$, the maximally non-linear regime. From each simulation, we extract the stellar mass density $\Star$, cold dark matter density $\rhoDM$, and mass-weighted mean gas temperature $\Tg$. For \CAMELS, fields are voxelized to $256^3$ for $\Tg$ and $128^3$ for $\rhoDM$ (resolutions $\approx 0.1$ and $0.2\Mpch$). For \TNG, all three fields are discretized to $1024^3$ voxels ($\approx 0.2\Mpch$ resolution). Table~\ref{tab:fields} summarizes these configurations. 
+All 3D fields are extracted at redshift $z=0$, the maximally non-linear regime. From each simulation, we extract the stellar mass density $\Star$, cold dark matter density $\rhoDM$, and mass-weighted mean gas temperature $\Tg$. For \CAMELS, fields are voxelized to $256^3$ for $\Tg$ and $128^3$ for $\rhoDM$ (resolutions $\approx 0.1$ and $0.2\Mpch$). For \TNG, all three fields are discretized to $1024^3$ voxels ($\approx 0.2\Mpch$ resolution). Table~\ref{tab:fields} summarizes these configurations.
 
 
 
@@ -64,7 +50,7 @@ All 3D fields are extracted at redshift $z=0$, the maximally non-linear regime. 
 
 Our fist use case is to predict $\ofield=\Tg$ from the $\cfield=\rhoDM$ fields, in two different modalities: first, we show with \CAMELS the performance of the model when the box size is the same between training and generation; second, we demonstrate with \TNG the ability of our method to upscale to a 100 times larger volume the generative capability learnt from a small simulation box.
 
-For \CAMELS, we train on three CV simulations (all with the same cosmological and astrophysical parameters) with different random seeds, each voxelized at $256^3$. For \TNG, we train on a $256^3$ voxels sub cube, corresponding to a box of side $51.25\Mpch$, taken from the full \TNG run. In both cases, we subdivide this $256^3$ training volume into 64 subvolumes, each encompassing $64^3$ voxels, which are used as individual samples for training. We note that subdividing into $64^3$ voxels for training and generating is carried out due to GPU memory limitations, as larger training volumes would not fit into the available GPU memory. Due to the upscaling capabilities of our method, this is however not a fundamental limitation, and actually makes the learning more efficient. Data augmentation is applied by random rotations and reflections to enforce rotational equivariance. This gives us $24$ different orientations per training sample. Since their density spans over five orders of magnitude, all fields are log-scaled prior to training. This results in $\sim24{,}600$ training samples for \CAMELS and $\sim8{,}200$ for \TNG.  
+For \CAMELS, we train on three CV simulations (all with the same cosmological and astrophysical parameters) with different random seeds, each voxelized at $256^3$. For \TNG, we train on a $256^3$ voxels sub cube, corresponding to a box of side $51.25\Mpch$, taken from the full \TNG run. In both cases, we subdivide this $256^3$ training volume into 64 subvolumes, each encompassing $64^3$ voxels, which are used as individual samples for training. We note that subdividing into $64^3$ voxels for training and generating is carried out due to GPU memory limitations, as larger training volumes would not fit into the available GPU memory. Due to the upscaling capabilities of our method, this is however not a fundamental limitation, and actually makes the learning more efficient. Data augmentation is applied by random rotations and reflections to enforce rotational equivariance. This gives us $24$ different orientations per training sample. Since their density spans over five orders of magnitude, all fields are log-scaled prior to training. This results in $\sim24{,}600$ training samples for \CAMELS and $\sim8{,}200$ for \TNG.
 
 \subsubsection{Generating dark matter maps from stellar density maps}\label{dmfromstar}
 
@@ -77,38 +63,37 @@ In addition to this baseline setting, we introduce a new test for the generative
 In all cases, the data are split into $70\%$ for training and $30\%$ for testing.
 
 \subsubsection{Diffusion model training and validation}
-The training procedure is identical for both applications described in sections~\ref{gasfromdm}. 
+The training procedure is identical for both applications described in sections~\ref{gasfromdm}.
 
-At each iteration, the target field, either $\Tg$ or $\rhoDM$, is sampled from the training set and corrupted with a Gaussian according to Eq.~\eqref{eq:vdm_forward}.  
+At each iteration, the target field, either $\Tg$ or $\rhoDM$, is sampled from the training set and corrupted with a Gaussian according to Eq.~\eqref{eq:vdm_forward}.
 The optimizer employed for training is AdamW \citep{adamw}, with a batch size of 8. The learning rate schedule adopted is Cosine Annealing Warm Restarts, with the maximum and minimum values for the learning rate set to $3\times10^{-4}$ and $10^{-6}$, respectively, with repeat cycles of 20 epochs. The model is trained for 100{,}000 steps and the model checkpoint that corresponds to the lowest loss is stored.
 
 
 For the \CAMELS simulations we set $T=400$ for both $\rhoDM$ and $\Tg$ generation, while for the case of \TNG, we choose $T=200$ for $\Tg$ generation. For the case of \TNG from \CAMELS a timestep of $T=100$ for $\rhoDM$ generation is chosen, as a compromise between generation accuracy (which requires larger $T$) and computational effort (which increases with larger $T$).
 
 
-
-\section{\FOLD: Field Overlap Latent Diffusion}
+\subsection{\FOLD: Field Overlap Latent Diffusion}
 \label{subsect:contgen}
 
 
-As explained above, the diffusion model is trained on small sub-volumes, which for the case of \TNG are 1\% of the volume one wishes to generate the target field for. The central problem is how to then combine the generated fields in such a way to obtain an optimal generation for the much larger target volume, that was never seen in during training.  
+As explained above, the diffusion model is trained on small sub-volumes, which for the case of \TNG are 1\% of the volume one wishes to generate the target field for. The central problem is how to then combine the generated fields in such a way to obtain an optimal generation for the much larger target volume, that was never seen in during training.
 
-Simply generating independent sub-volumes each with the same size of the training data volume and then assembling them to generate the target field leads to discontinuities at the cube boundaries, as illustrated in the bottom left panel of Figure~\ref{fig:cont_gen} for the case $\cfield=\rhoDM$ and $\ofield=\Tg$. The discontinuities arise because $\Tg$ is sampled from the conditional distribution  $\Tg\sim p(\Tg|\rhoDM)$ which depends solely on the local voxels of the $\rhoDM$ sub-volume, without considering the surrounding context. Consequently, the edges of adjacent cubes do not perfectly align. However, the boundary artifacts do not impede the model’s primary objective of capturing the small-scale relationship between dark matter and the temperature field. 
+Simply generating independent sub-volumes each with the same size of the training data volume and then assembling them to generate the target field leads to discontinuities at the cube boundaries, as illustrated in the bottom left panel of Figure~\ref{fig:cont_gen} for the case $\cfield=\rhoDM$ and $\ofield=\Tg$. The discontinuities arise because $\Tg$ is sampled from the conditional distribution  $\Tg\sim p(\Tg|\rhoDM)$ which depends solely on the local voxels of the $\rhoDM$ sub-volume, without considering the surrounding context. Consequently, the edges of adjacent cubes do not perfectly align. However, the boundary artifacts do not impede the model’s primary objective of capturing the small-scale relationship between dark matter and the temperature field.
 
-In \LODI, addresses this issue by using overlapping sub-volumes at the generation stage. Each cube being generated shared a boundary region with its neighbors so that latent representations were correlated across overlaps. This ensured that the boundary conditions between sub-volumes in the overlapping region were aligned. 
+In \LODI, addresses this issue by using overlapping sub-volumes at the generation stage. Each cube being generated shared a boundary region with its neighbors so that latent representations were correlated across overlaps. This ensured that the boundary conditions between sub-volumes in the overlapping region were aligned.
 Although \LODI was shown to work well when the overlapping regions feature localized structures, the approach fails for extended structures that exceed the size of a sub-volume, such as dark matter filaments or $\Tg$, as demonstrated in the bottom central panel of Figure~\ref{fig:cont_gen}. The second issue of \LODI is the increased runtime: for example, to generate a $256^3$ voxel simulation with \LODI, we would would need to tile a minimum of 512 $32^3$ sub-volumes (this being the training sub-volume size chosen for \LODI).  However, due to the requirement to overlap sub-volumes, the number of forward generation sub-volumes needed increases by 40\% to $729$, with a corresponding increase of compute time. Increasing the size of the training volume would in principle help to mitigate this, but the attention block's computational cost scales quadratically with input dimensions, thus making generation slower rather than faster for larger sizes. Second, because the attention module was not trained on larger spatial volumes, it would need to extrapolate beyond its learned regime, potentially degrading correlation accuracy.
 \vspace{\baselineskip}
 
-To address all of the above issue, we introduce here the novel \FOLD method (summarized in Algorithm~\ref{alg:sample_fold}), a generation scheme that builds upon the overlapping–sub-volume strategy while overcoming its key limitations. \FOLD is able to produce large-scale, spatially coherent cosmological fields with higher fidelity and lower computational cost than \LODI, thus enabling efficient synthesis of full-volume realizations without sacrificing small-scale structure detail. 
+To address all of the above issue, we introduce here the novel \FOLD method (summarized in Algorithm~\ref{alg:sample_fold}), a generation scheme that builds upon the overlapping–sub-volume strategy while overcoming its key limitations. \FOLD is able to produce large-scale, spatially coherent cosmological fields with higher fidelity and lower computational cost than \LODI, thus enabling efficient synthesis of full-volume realizations without sacrificing small-scale structure detail.
 
 
-Unlike other approaches that denoise overlapping chunks with some prescription to enforce continuity, \FOLD employs a differential sliding window strategy that maintains coherence implicitly throughout the diffusion trajectory, Crucially, this does not use any overlap prescription.
+Unlike other approaches that denoise overlapping chunks with some prescription to enforce continuity, \FOLD employs a differential sliding window strategy that maintains coherence implicitly throughout the diffusion trajectory. Crucially, this does not use any overlap prescription.
 This design reduces generation time by $\approx40\%$ relative to \LODI\ when applied to the \TNG simulation (assuming an 8-voxel overlap per side for $64^3$ chunks) even before accounting for the additional overhead of computing overlaps.
 Furthermore, \FOLD is explicitly designed to respect periodic boundary conditions, which were not enforced in \LODI.
 
 
-\subsection*{\FOLD generation scheme}
-To illustrate the \FOLD method, we consider generating a target $\ofield$ field, conditioned on $\cfield$, with a volume of $256^3$ voxels. We first initialize a noise map of the same shape as the target, which corresponds to $\ofield^{t=T}$, where the upper index denotes the step in the denoising process. Next, this cube is partitioned into a $4^3$ grid of non-overlapping chunks, each with $64^3$ voxels -- matching the size of the training samples. We then apply one step of the diffusion denoising model ($t \rightarrow t-1$) to each chunk. Each $64^3$ sub-volume is denoised independently for a single time step according to the learned conditional distribution: 
+\subsubsection*{\FOLD generation scheme}
+To illustrate the \FOLD method, we consider generating a target $\ofield$ field, conditioned on $\cfield$, with a volume of $256^3$ voxels. We first initialize a noise map of the same shape as the target, which corresponds to $\ofield^{t=T}$, where the upper index denotes the step in the denoising process. Next, this cube is partitioned into a $4^3$ grid of non-overlapping chunks, each with $64^3$ voxels, matching the size of the training samples. We then apply one step of the diffusion denoising model ($t \rightarrow t-1$) to each chunk. Each $64^3$ sub-volume is denoised independently for a single time step according to the learned conditional distribution:
 \begin{equation}
     \tilde{\ofield}^{t-1}_{j} \sim p_{\NNpars}\left( \ofield^{t-1}_j \mid \ofield^{t}_j, \cfield_j^t \right),
 \end{equation}
@@ -117,7 +102,7 @@ The conditioning field must be shifted in an analogous manner to remain consiste
 
 The pair $(\ofield^{t-1}, \cfield^{t-1})$ then serves as input to the next denoising step. In this way, at each iteration the entire cube is denoised again using the most recent latent state, but with an offset grid so that different voxel neighborhoods are processed together over successive steps.
 
-This reconstruction and grid shift occurs a total of $T$ times, one for each time step, ensuring that information propagates smoothly across sub-volume boundaries. Since the simulation fields satisfy periodic boundary conditions, the grids also wrap around the edges of the simulation box when shifted. An illustration of our algorithm is shown in~Fig.~\ref{fig:sliding_window}, for the use case in the first line of Table~\ref{tab:fields}:  the image on the left is the full \CAMELS volumes generated at time $t=310$ (about a quarter through the denoising process, as here $T=400$), and the partition of the sub-volumes follows the green grid lines. Some structure begins to emerge from the initial pure noise. After another 80 time steps (central panel), the new grid structure is shown with solid lines, and the old grid is dashed. At $t=140$ step (right image), the grid has further shifted and the noise level has been reduced. 
+This reconstruction and grid shift occurs a total of $T$ times, one for each time step, ensuring that information propagates smoothly across sub-volume boundaries. Since the simulation fields satisfy periodic boundary conditions, the grids also wrap around the edges of the simulation box when shifted. An illustration of our algorithm is shown in~Fig.~\ref{fig:sliding_window}, for the use case in the first line of Table~\ref{tab:fields}:  the image on the left is the full \CAMELS volumes generated at time $t=310$ (about a quarter through the denoising process, as here $T=400$), and the partition of the sub-volumes follows the green grid lines. Some structure begins to emerge from the initial pure noise. After another 80 time steps (central panel), the new grid structure is shown with solid lines, and the old grid is dashed. At $t=140$ step (right image), the grid has further shifted and the noise level has been reduced.
 
 \begin{algorithm}
 \caption{\FOLD}
@@ -129,7 +114,7 @@ This reconstruction and grid shift occurs a total of $T$ times, one for each tim
         \For{cube $j \in$ sub-volumes}
         \State $\tilde{\ofield}^{t-1}_{j} \sim p_{\NNpars}\left( \ofield^{t-1}_j \mid \ofield^{t}_j, \cfield_j^t \right)$
     \EndFor
-    
+
     Tile $\tilde{\ofield}^{t-1}_j, \cfield_j^t$ to get $\tilde{\ofield}^{t-1}, \cfield^t$  \quad \#{ recreate the original volume size at time $t-1$}
     \State shift tiled $\tilde{\ofield}^{t-1}, \cfield^t$ by 1 voxel along 3 axes with periodic boundary conditions to get $\ofield^{t-1}$ and new shifted $\cfield^{t-1}$
 \EndFor
@@ -152,25 +137,18 @@ These boundary planes are initially slightly out of distribution relative to the
 Provided that the noise increment per time step is sufficiently small, the diffusion model perceives no abrupt transitions, and the denoiser refines the entire field as a continuous, spatially consistent structure across iterations.
 
 
-
-
-
-
-
-
-
-\section{Position encodings for higher order correlation}
+\subsection{Position encodings for higher order correlation}
 \label{bispectrum}
 
-The two-point correlation function or its Fourier counterpart, the power spectrum, is the most widely used statistic to characterize the statistical properties of a cosmological field. However, the power spectrum fully describes the field only if the underlying density fluctuations are a Gaussian random field, which is not the case at later cosmological times~\citep{Bernardeau_2002,sefu06}.To capture deviations from Gaussianity, higher-order statistics are required, the lowest-order of which is the bispectrum -- the Fourier transform of the three-point correlation function. 
+The two-point correlation function or its Fourier counterpart, the power spectrum, is the most widely used statistic to characterize the statistical properties of a cosmological field. However, the power spectrum fully describes the field only if the underlying density fluctuations are a Gaussian random field, which is not the case at later cosmological times~\citep{Bernardeau_2002,sefu06}. To capture deviations from Gaussianity, higher-order statistics are required, the lowest-order of which is the bispectrum, the Fourier transform of the three-point correlation function.
 
 For a given density field $\rho$, the bispectrum $B(\mathbf{k_1},\mathbf{k_2},\mathbf{k_3})$ is defined as:
 \begin{equation}
-    \langle \delta(\mathbf{k_1})\delta(\mathbf{k_2})\delta(\mathbf{k_3}) \rangle = (2\pi)^3 \delta^D(\mathbf{k_1}+\mathbf{k_2}+\mathbf{k_3})B(\mathbf{k_1},\mathbf{k_2},\mathbf{k_3}) \, ,
+    \langle \delta(\mathbf{k_1})\delta(\mathbf{k_2})\delta(\mathbf{k_3}) \rangle = (2\pi)^3 \delta^D(\mathbf{k_1}+\mathbf{k_2}+\mathbf{k_3})B(\mathbf{k_1},\mathbf{k_2},\mathbf{k_3}) \,,
 \end{equation}
-where $\delta(\mathbf{k})$ is the Fourier transform of the overdensity field $\delta(\mathbf{x})$ and $\delta^D$ is the Dirac delta function. Since a triangle configuration in $\textbf{k}$ space can also be represented with two wave modes and the angle $\theta$ between them, we will express the  bispectrum a $B( \mathbf{k_1},\mathbf{k_2}, \theta)$.
+where $\delta(\mathbf{k})$ is the Fourier transform of the overdensity field $\delta(\mathbf{x})$ and $\delta^D$ is the Dirac delta function. Since a triangle configuration in $\textbf{k}$ space can also be represented with two wave modes and the angle $\theta$ between them, we will express the  bispectrum as $B( \mathbf{k_1},\mathbf{k_2}, \theta)$.
 
-The bispectrum is an important source of cosmological information: cosmological parameters (like the amplitude of fluctuations, bias of galaxies, neutrino mass, etc.) can be degenerate in terms of the power spectrum, and the bispectrum  helps break these degeneracies, especially in the context of galaxy clustering. In addition, several inflationary scenarios predict the presence of primordial non-Gaussianity \citep{Bartolo_2004}. It is therefore important that the bispectrum of dark matter is predicted accurately by the diffusion process. 
+The bispectrum is an important source of cosmological information: cosmological parameters (like the amplitude of fluctuations, bias of galaxies, neutrino mass, etc.) can be degenerate in terms of the power spectrum, and the bispectrum  helps break these degeneracies, especially in the context of galaxy clustering. In addition, several inflationary scenarios predict the presence of primordial non-Gaussianity \citep{Bartolo_2004}. It is therefore important that the bispectrum of dark matter is predicted accurately by the diffusion process.
 
 In practice, it is also often useful to consider the \emph{reduced bispectrum}, which isolates the shape dependence of the three point function by factoring
 out the overall amplitude set by the power spectrum.
@@ -193,17 +171,15 @@ where $P(k)$ denotes the power spectrum of the overdensity field.
 
 \vspace{\baselineskip}
 
-Since the bispectrum and the reduced bispectrum are a function of both the separation between the points and the angle between the wave modes, there exists infinitely many unique triangle configurations. It is therefore impossible to train a model to learn the bispectrum for all possible configurations individually. 
+Since the bispectrum and the reduced bispectrum are a function of both the separation between the points and the angle between the wave modes, there exist infinitely many unique triangle configurations. It is therefore impossible to train a model to learn the bispectrum for all possible configurations individually.
 To address this issue, and to enable the model to capture the scale and angular dependence of the bispectrum across all configurations, we supplement the \FOLD input with periodic positional encodings. These provide global phase information that is otherwise inaccessible to purely local convolutional filters of the diffusion model. For each spatial coordinate axis, we construct a positional feature as a sum of sinusoidal functions at multiple frequencies:
 \begin{equation} \label{eq:pos_embedding}
-   \pos=\displaystyle\sum_{i=0}^n  \alpha_i[\sin(2\pi\textbf{x}f_i) + \beta\cos(2\pi\textbf{x}f_i)] \, ,
+   \pos=\displaystyle\sum_{i=0}^n  \alpha_i[\sin(2\pi\textbf{x}f_i) + \beta\cos(2\pi\textbf{x}f_i)] \,,
 \end{equation}
-where $\mathbf{x}=(x,y,z)$, and where we work with normalized coordinates, so $x,y,z\in[0,1]$. $\{f_i\}^n_{i=0} = 2^n$ are the frequencies, each dealing with a different scale, thus spanning a hierarchy of scales within the box. $\alpha_i$ are the fixed amplitude weights per frequency bands and $\beta$ ias chosen to add a relative amplitude between the sine and cosine signals, which has shown in our case to improve results. The positional encodings $\pos$ are concatenated to the conditioning field $\cfield$ (in our case, this is $\rhoDM$), yielding an array of shape $3\times d^3$, where $d$ are the total number of voxels per side. We test the model for different values of the hyperparameter $n$. In principle, the larger the $n$, the more phase information the model has access to. However, it can also confuse the convolutional network since we are adding all frequencies for one coordinate into one channel, making it hard for the network to disentangle the phase information at different scales. For the results of this paper, we use $n=4$, while $\alpha_i=[0.33,0.29,0.25,0.21,0.19]$ and $\beta=1.5$. These values were chosen heuristically based on a limited set of exploratory experiments, in which we varied the relative weighting of low and high frequency components and monitored reconstruction quality. Although we have not systematically explored the full hyperparameter space, these values were found to yield satisfactory results. The coefficients $\alpha_i$ also control the relative strength of the positional encoding signal with respect to the conditioning field $\cfield$. If the signal is too weak (small $\alpha_i$), the model is unable to effectively utilize the positional information. Conversely, excessively large values of $\alpha_i$ inject spurious structure
+where $\mathbf{x}=(x,y,z)$, and where we work with normalized coordinates, so $x,y,z\in[0,1]$. $\{f_i\}^n_{i=0} = 2^n$ are the frequencies, each dealing with a different scale, thus spanning a hierarchy of scales within the box. $\alpha_i$ are the fixed amplitude weights per frequency bands and $\beta$ is chosen to add a relative amplitude between the sine and cosine signals, which has shown in our case to improve results. The positional encodings $\pos$ are concatenated to the conditioning field $\cfield$ (in our case, this is $\rhoDM$), yielding an array of shape $3\times d^3$, where $d$ are the total number of voxels per side. We test the model for different values of the hyperparameter $n$. In principle, the larger the $n$, the more phase information the model has access to. However, it can also confuse the convolutional network since we are adding all frequencies for one coordinate into one channel, making it hard for the network to disentangle the phase information at different scales. For the results of this paper, we use $n=4$, while $\alpha_i=[0.33,0.29,0.25,0.21,0.19]$ and $\beta=1.5$. These values were chosen heuristically based on a limited set of exploratory experiments, in which we varied the relative weighting of low and high frequency components and monitored reconstruction quality. Although we have not systematically explored the full hyperparameter space, these values were found to yield satisfactory results. The coefficients $\alpha_i$ also control the relative strength of the positional encoding signal with respect to the conditioning field $\cfield$. If the signal is too weak (small $\alpha_i$), the model is unable to effectively utilize the positional information. Conversely, excessively large values of $\alpha_i$ inject spurious structure
 at the corresponding Fourier modes, which is particularly detrimental given the sparsity of $\cfield$.
 The chosen values therefore represent a compromise that allows the network to exploit positional information without overwhelming the physical signal.
-We apply this modification of the method on the \TNG simulation, where we condition on $\Star$ and generate $\rhoDM$, and verify the quality of the bispectrum of the generated dark matter map for a few different triangle configurations. 
-
-
+We apply this modification of the method on the \TNG simulation, where we condition on $\Star$ and generate $\rhoDM$, and verify the quality of the bispectrum of the generated dark matter map for a few different triangle configurations.
 
 
 \section{Results}
@@ -236,7 +212,7 @@ The bottom right panel shows a comparison of the distribution of voxel values, a
 
 \subsubsection{Generating \TNG gas temperature field}
 
-Next, to evaluate performance on upscaling to larger domains, we apply \FOLD to the \TNG simulation (Figure~\ref{fig:upscaling}). Here, the diffusion model is trained and validated on a $256^3$ voxels subset of the data, or $\approx 1.5\%$ of the simulation ($70\%$ of which is for training and rest for validating). The ground truth gas temperature field $\Tg$ is shown in the top right panel, to be compared with two different generation routes obtained with \FOLD. In the first case (top row), the generated $\Tg$ field is conditioned on the {\em true} $\rhoDM$ field of the \TNG simulation, while in the second case (middle and bottom row), the conditional $\rhoDM$ field has also been generated using the \FOLD algorithm from the underlying stellar field, as described in section~\ref{sec:dm_from_stars}. 
+Next, to evaluate performance on upscaling to larger domains, we apply \FOLD to the \TNG simulation (Figure~\ref{fig:upscaling}). Here, the diffusion model is trained and validated on a $256^3$ voxels subset of the data, or $\approx 1.5\%$ of the simulation ($70\%$ of which is for training and rest for validating). The ground truth gas temperature field $\Tg$ is shown in the top right panel, to be compared with two different generation routes obtained with \FOLD. In the first case (top row), the generated $\Tg$ field is conditioned on the {\em true} $\rhoDM$ field of the \TNG simulation, while in the second case (middle and bottom row), the conditional $\rhoDM$ field has also been generated using the \FOLD algorithm from the underlying stellar field, as described in section~\ref{sec:dm_from_stars}.
 
 \begin{figure*}
     \centering
@@ -245,14 +221,14 @@ Next, to evaluate performance on upscaling to larger domains, we apply \FOLD to 
     \label{fig:TNG_DM_mstar_1}
 \end{figure*}
 
-We compare the statistical distributions of voxel values using both 1-dimensional histograms and 2-dimensional $\rhoDM-\Tg$ joint distributions in Fig.~\ref{fig:TNG_DM_mstar_1}. The 1D histogram shows that for intermediate $\Tg$ values, ranging from $1\text{K}\leq\Tg\leq 10^{11.5}$K, the abundance of voxels is accurately reproduced for both (true and generated) conditioning dark matter maps. At the highest temperatures the model under-predicts rare, extreme-valued voxels, that represent a fraction in the range $10^{-6}-10^{-8}$ of the total voxel population, very difficult to capture due to their rarity among the training examples. The 2D contour plot, displaying the $68\%$ and $95\%$ joint probability mass of dark matter density voxel values and $\Tg$ values, shows close agreement between the target and generated contours when the true dark matter map is used for conditioning -- except where large $\Tg$ values correspond to low density dark matter regions, where \FOLD
-under-predicts the $\Tg$ values. This is expected because the conditional dark matter density carries limited information about the diffuse feedback heated gas that populate these voxels. The agreement with the ground truth is somewhat reduced when the conditioning map has been itself generated from the stellar map, which is again expected because of the compounding of errors. 
+We compare the statistical distributions of voxel values using both 1-dimensional histograms and 2-dimensional $\rhoDM-\Tg$ joint distributions in Fig.~\ref{fig:TNG_DM_mstar_1}. The 1D histogram shows that for intermediate $\Tg$ values, ranging from $1\text{K}\leq\Tg\leq 10^{11.5}$K, the abundance of voxels is accurately reproduced for both (true and generated) conditioning dark matter maps. At the highest temperatures the model under-predicts rare, extreme-valued voxels, that represent a fraction in the range $10^{-6}-10^{-8}$ of the total voxel population, very difficult to capture due to their rarity among the training examples. The 2D contour plot, displaying the $68\%$ and $95\%$ joint probability mass of dark matter density voxel values and $\Tg$ values, shows close agreement between the target and generated contours when the true dark matter map is used for conditioning, except where large $\Tg$ values correspond to low density dark matter regions, where \FOLD
+under-predicts the $\Tg$ values. This is expected because the conditional dark matter density carries limited information about the diffuse feedback heated gas that populate these voxels. The agreement with the ground truth is somewhat reduced when the conditioning map has been itself generated from the stellar map, which is again expected because of the compounding of errors.
 
 \vspace{\baselineskip}
 
 \subsection{Dark matter from stellar density fields with upscaling} \label{sec:dm_from_stars}
 
-We next apply \FOLD to the inverse problem of reconstructing the dark matter overdensity field $\boldsymbol{\rho}_\text{DM}$, from the corresponding stellar field $\boldsymbol{\rho}_\text{star}$. We evaluate the model capabilities to transfer from \CAMELS to \TNG. 
+We next apply \FOLD to the inverse problem of reconstructing the dark matter overdensity field $\boldsymbol{\rho}_\text{DM}$, from the corresponding stellar field $\boldsymbol{\rho}_\text{star}$. We evaluate the model capabilities to transfer from \CAMELS to \TNG.
 
 \begin{figure*}[h!]
     \centering
@@ -265,14 +241,14 @@ We next apply \FOLD to the inverse problem of reconstructing the dark matter ove
 \subsubsection{\TNG from \TNG}
 
 First, we apply the model to the \TNG simulation, generating the $\rhoDM$ field (middle left panel in Fig.~\ref{fig:upscaling}) from the stellar density field (bottom left panel) voxelized into $1024^3$ cells, and covering a cube of side $205\Mpch$.
-The $256^3$ voxels subvolume used for training and validation $(\approx1.5\%~\text{of the total})$ is shown by the smaller boxes on the bottom right (the grid shows the further subdivision in $64^3$ training volumes). To assess the quality of the generation, we compare the 1 point statistic in the form of a histogram of voxel values and the 2 point correlation statistics in the form of the power spectrum $P_\text{DM}(k)$ of the generated and the ground truth dark matter fields in Fig.~\ref{fig:TNG_DM_mstar_2}, where we also show power spectrum residuals. The power spectrum matches to better than 10\% well into the non-linear regime, increasing only beyond $k\approx 5\hMpci$. The reason for the loss of power at the smallest scales is their extreme non-linear nature, which is harder to predict. For the largest scales, the error is a combination of cosmic variance and the approximate correlation for voxel with separations much larger than than the training volume. However, this effect is mild since in our case the wavemode corresponding to the subvolume scale is $k\approx 0.5\hMpci$, but the power spectrum does not lose power till $k\approx 0.1\hMpci$. We note that the small scale performance can potentially be improved by increasing the total denoising steps $T$, at the cost of increased generation time. 
+The $256^3$ voxels subvolume used for training and validation $(\approx1.5\%~\text{of the total})$ is shown by the smaller boxes on the bottom right (the grid shows the further subdivision in $64^3$ training volumes). To assess the quality of the generation, we compare the 1 point statistic in the form of a histogram of voxel values and the 2 point correlation statistics in the form of the power spectrum $P_\text{DM}(k)$ of the generated and the ground truth dark matter fields in Fig.~\ref{fig:TNG_DM_mstar_2}, where we also show power spectrum residuals. The power spectrum matches to better than 10\% well into the non-linear regime, increasing only beyond $k\approx 5\hMpci$. The reason for the loss of power at the smallest scales is their extreme non-linear nature, which is harder to predict. For the largest scales, the error is a combination of cosmic variance and the approximate correlation for voxel with separations much larger than than the training volume. However, this effect is mild since in our case the wavemode corresponding to the subvolume scale is $k\approx 0.5\hMpci$, but the power spectrum does not lose power till $k\approx 0.1\hMpci$. We note that the small scale performance can potentially be improved by increasing the total denoising steps $T$, at the cost of increased generation time.
 
 
 \subsubsection{\TNG from \CAMELS}
 
 Here we revert to the baseline \FOLD model without positional encodings and assess its ability to generate \TNG volumes when trained exclusively on small \CAMELS simulations. We train and validate the model on four independent \CAMELS simulations with a comoving box size of side $25\Mpch$, generating dark matter overdensity fields conditioned on stellar density fields. Each
 simulation is partitioned into $64^3$ voxel subvolumes for training.
-Figure~\ref{fig:TNG_CAMELS_illus} illustrates the training and generation pipeline, with the four \CAMELS simulations shown in the bottom row. To quantitatively assess the quality of the generated \TNG dark matter field, we compare its power spectrum to that of the ground truth. We note that visually, the generated field looks very similar to the ground truth field, recreating most of the filaments and void, seven if during training, the filaments and structures seen by \FOLD were very different from \TNG, and much smaller in size.
+Figure~\ref{fig:TNG_CAMELS_illus} illustrates the training and generation pipeline, with the four \CAMELS simulations shown in the bottom row. To quantitatively assess the quality of the generated \TNG dark matter field, we compare its power spectrum to that of the ground truth. We note that visually, the generated field looks very similar to the ground truth field, recreating most of the filaments and void, even if during training, the filaments and structures seen by \FOLD were very different from \TNG, and much smaller in size.
 
 The resulting power spectrum exhibits two distinct regimes, as shown in Fig~\ref{fig:TNG_CAMELS_PS}. On scales smaller than the \CAMELS box size, the generated field reproduces the true power spectrum to within $10\%$ accuracy, extending into the non-linear regime up to $k \leq 6\hMpci$. In contrast, for scales approaching and exceeding the \CAMELS box size, the model exhibits a systematic loss of power, with residuals exceeding the $10\%$ level. This behavior is expected, as \FOLD cannot learn or reconstruct large-scale modes that are absent from the training volumes. As a result, power on scales larger than those present in the training data cannot be faithfully recovered.
 
@@ -299,14 +275,14 @@ The resulting power spectrum exhibits two distinct regimes, as shown in Fig~\ref
 
 Beyond one- and two-point statistics, an important test of generative models for cosmological fields is their ability to reproduce higher order correlations that encode non-Gaussian structure arising from non-linear gravitational collapse at late times. In particular, the bispectrum of the dark matter density field provides a sensitive probe of mode coupling induced by non-linear gravitational evolution.
 To assess whether our model captures this information, we repeat the generation of the dark matter field from the stellar density field while augmenting the conditioning input with sinusoidal positional encodings
-$\pos$, as described in Section~\ref{bispectrum}. These encodings provide the network with explicit information about spatial location within the simulation volume, which can help to break translational degeneracies inherent to patch-based training and improve the modeling of large scale phase correlations. 
+$\pos$, as described in Section~\ref{bispectrum}. These encodings provide the network with explicit information about spatial location within the simulation volume, which can help to break translational degeneracies inherent to patch-based training and improve the modeling of large scale phase correlations.
 
 The resulting bispectra and reduced bispectra of the generated dark matter fields are shown in Fig.~\ref{fig:bispectra}, where we compare them to the ground-truth simulation across a range of triangle configurations in Fourier space. In all panels, the blue curves correspond to \FOLD augmented with positional encodings, the orange curves to the baseline \FOLD model without positional encodings, and the black curves to the ground truth.
 
 We present results for four representative triangle configurations (see Section~\ref{bispectrum} for details). The leftmost column corresponds to equilateral configurations with wavevectors ${k_1}={k_2}$ and the angle $\theta$ between them as $\pi/3$. The middle-left column shows squeezed configurations with ${k_1}={k_2}$, but with $\theta=0$. The middle-right and rightmost columns correspond to fixed-scale configurations with $({k_1},{k_2})=(0.1,1.0)\hMpci$ and $({k_1},{k_2})=(0.3,0.1)\hMpci$.
-Across all configurations, we find that the inclusion of positional encodings significantly improves agreement with the true bispectrum. This demonstrates that the model is able to recover non-Gaussian features of the dark matter field that are not constrained by the power spectrum alone. 
+Across all configurations, we find that the inclusion of positional encodings significantly improves agreement with the true bispectrum. This demonstrates that the model is able to recover non-Gaussian features of the dark matter field that are not constrained by the power spectrum alone.
 
-Adding positional encodings does not appreciably reduce the quality of the lower-order statistics. As shown in Fig.~\ref{fig:bispectra_2}, both the one-point distribution and the power spectrum of the generated fields remain in close agreement with the ground truth when positional encodings are added, with only a mild degradation compared to the case without positional encodings (Fig.~\ref{fig:TNG_DM_mstar_2}). We note the presence of additional power at intermediate scales, $k\simeq0.3-1.0\hMpci$, which can be attributed to spurious structure introduced by directly concatenating positional encodings to the sparse stellar field at the voxel level. This additional signal can partially confuse the network and enhance power at these scales. Conversely, power on the largest scales, previously suppressed in the absence of positional encodings, is more accurately recovered. 
+Adding positional encodings does not appreciably reduce the quality of the lower-order statistics. As shown in Fig.~\ref{fig:bispectra_2}, both the one-point distribution and the power spectrum of the generated fields remain in close agreement with the ground truth when positional encodings are added, with only a mild degradation compared to the case without positional encodings (Fig.~\ref{fig:TNG_DM_mstar_2}). We note the presence of additional power at intermediate scales, $k\simeq0.3-1.0\hMpci$, which can be attributed to spurious structure introduced by directly concatenating positional encodings to the sparse stellar field at the voxel level. This additional signal can partially confuse the network and enhance power at these scales. Conversely, power on the largest scales, previously suppressed in the absence of positional encodings, is more accurately recovered.
 
 Overall, these results indicate that the inclusion of positional information substantially improves the modeling of higher order correlations, while preserving the accuracy of one and two-point statistics to a high degree.
 
@@ -328,8 +304,6 @@ Overall, these results indicate that the inclusion of positional information sub
 
 \subsection{Computational cost}
 \begin{sidewaystable}
-
-% \begin{table*}
 
 \centering
 \caption{Computational cost associated with the \FOLD use cases presented in this work. All results were obtained on a single NVIDIA A100 GPU with 40\,GB of memory. Reported times correspond to wall-clock generation time. For each generated field, we indicate its physical content, its box side and the number of voxels. We also indicate the method that was used to generate the said volume along with the number of denoising steps used.}
@@ -355,12 +329,11 @@ $\rhoDM$ from $\Star$ (upscaling) & \field{$\rhoDM$}{205}{1024} & \FOLD & 100 & 
 
 
 \end{tabular}
-% \end{table*}
-    
+
 \end{sidewaystable}
 
 
-A tabulated summary of the computational time required to produce the various results presented in this paper is provided in Table~\ref{tab:compute_cost}. All results were generated on a single NVIDIA A100 GPU with 40\,GB of memory. We further note that the generation time scales approximately linearly with the number of denoising steps $T$ and can therefore be reduced by decreasing $T$, at the cost of degraded performance on the smallest scales. 
+A tabulated summary of the computational time required to produce the various results presented in this paper is provided in Table~\ref{tab:fields}. All results were generated on a single NVIDIA A100 GPU with 40\,GB of memory. We further note that the generation time scales approximately linearly with the number of denoising steps $T$ and can therefore be reduced by decreasing $T$, at the cost of degraded performance on the smallest scales.
 
 
 
@@ -368,7 +341,6 @@ A tabulated summary of the computational time required to produce the various re
 \label{sec:conclusions}
 We have presented \FOLD (Field-Overlap Latent Diffusion), a novel framework for generating conditional, arbitrarily large cosmological fields by coherently stitching together outputs from a diffusion model trained on smaller volumes. Building upon the variational diffusion architecture of \LODI, \FOLD enables seamless reconstruction of large scale structure while preserving local physical fidelity.
 
-A summary of all test cases, conditioning setups, and corresponding figures discussed below is provided in Table~\ref{summary_table}.
 We demonstrated the performance of \FOLD through two representative and complementary test cases. In the first case, we generated gas temperature fields conditioned on the dark matter density field. This choice highlights both the ability of the diffusion model to synthesize complex baryonic observables and the effectiveness of \FOLD in patching together highly
 structured fields without degrading the generative performance of the base model. To further study these results, we compared the generation of a
 $256^3$ voxels, $25\Mpch$ a side \CAMELS simulation using different patching strategies, providing
