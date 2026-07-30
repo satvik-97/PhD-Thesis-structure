@@ -1,57 +1,75 @@
-% ============================================================
-% chapters/ch4_dps/dps.tex
-% ============================================================
+
 \chapter{Diffusion Posterior Sampling for Cosmological Field Reconstruction}
 \label{ch:dps}
 
-The intergalactic medium (IGM) at high redshift holds the majority of the Universe's baryonic content, and on megaparsec scales its distribution traces the underlying dark matter field shaped by gravitational instability (\cite{Meiksin_2009,McQuinn_2016,Bi_1997}. The Lyman-alpha (Lya) forest — the pattern of absorption imprinted by intervening neutral hydrogen on the spectra of background quasars and galaxies — remains the most direct observational window onto this diffuse structure (Gunn & Peterson 1965; Lynds 1971; Rauch 1998). For over two decades, sufficiently dense grids of background sightlines have made it possible to move beyond one-dimensional flux statistics and reconstruct the IGM tomographically in three dimensions (Pichon et al. 2001; Caucci et al. 2008; Lee et al. 2014, 2018), a program now being extended by surveys such as DESI Lya QSO, WEAVE-QSO, and Subaru-PFS/CLAMATO/LATIS, and, in the coming decade, by ELT/MOSAIC and WST/IFS, which will push sightline separations down toward $1\,h^{-1}\mathrm{cMpc}$. At these finer separations, the reconstruction problem becomes increasingly sensitive to the baryonic physics — pressure smoothing, thermal broadening, and radiative feedback — that decouples the IGM from the pure dark matter field below $\sim 1\,\mathrm{Mpc}$ (Miralda-Escudé et al. 1996; Schaye et al. 2000; Viel et al. 2002; Bolton et al. 2017), motivating reconstruction methods that can go beyond the linear, large-scale regime.
+\noindent
+\textit{This chapter is a work in progress. The Introduction, Data
+Preparation (Section~\ref{sec:lya-data-prep}), and Optical Depth Theory
+(Section~\ref{sec:lya-theory}) sections reflect the current, fairly
+mature state of this analysis, including a forward model. The Diffusion Posterior Sampling
+methodology (Section~\ref{sec:dps_theory}) has been worked out
+theoretically in this pass, with equations, but its chapter-specific
+implementation details , the structural-consistency term, the exact
+memory-saving scheme, and the training hyperparameters of the
+Variational Diffusion Prior (Section~\ref{sec:dps_architecture}) , are
+still being finalized and are marked as placeholders below rather than
+presented as settled. No posterior reconstructions have been generated
+yet: Results (Section~\ref{sec:dps_results}) is a placeholder describing
+what it will contain once available, and the first results shown there
+will be for a single simulation sub-volume (a ``chunk''), not the full
+box.}
 
-Classical tomographic reconstruction has relied on Wiener filtering or Gaussian-process interpolation of the sparse sightline data (Lee et al. 2014, 2018), which is efficient but smooths out precisely the small-scale, non-linear structure that upcoming surveys are designed to resolve. More recent semi-analytic approaches, notably TARDIS (Horowitz et al. 2019, 2021), improve on this by embedding a physically motivated prior — nonlinear structure evolved forward with FastPM (Feng et al. 2016) — inside an iterative maximum-likelihood scheme, using the Fluctuating Gunn-Peterson Approximation as the forward model linking density to absorption. This is a more faithful treatment of gravitational nonlinearity, but it inherits the limitations of FGPA at small scales and is computationally expensive, since every posterior sample requires re-running the gravity solver.
+\section{Introduction}
+\label{sec:dps_intro}
 
-The last few years have seen deep generative models offer a third route: rather than approximating the forward problem or the prior analytically, learn one or both directly from hydrodynamical simulations. Variational autoencoders (Kingma & Welling 2013), GANs, and diffusion models have all been used to emulate non-linear cosmological fields (Villaescusa-Navarro et al. 2021; Lanusse et al. 2021), and Horowitz et al. (2022) showed that a VAE trained on simulations can learn the mapping between dark matter and baryonic tracers directly, without any FGPA-like approximation. This is the paradigm adopted by **DeepCHART** (Maitra, Viel & Kulkarni 2026, arXiv:2507.00135), developed concurrently within our own group and trained on the same $z=2.5$, $(40\,h^{-1}\mathrm{cMpc})^3$ Sherwood hydrodynamical simulations used throughout this chapter. DeepCHART uses a 3D U-Net VAE to map sparse Lya forest sightlines — optionally combined with coeval galaxy positions — directly onto the 3D dark matter density field in a single amortized forward pass, achieving a voxel-wise Pearson correlation of $\rho \simeq 0.77$ (on a $\sigma = 2\,h^{-1}\mathrm{cMpc}$-smoothed, dynamic-range-restricted $\Delta_{\rm DM}$) at a sightline separation of $d_\perp \simeq 2.4\,h^{-1}\mathrm{cMpc}$ matched to the Subaru-PFS Deep survey, rising to $\rho \simeq 0.90$ for the denser sampling anticipated from next-generation instruments, while also recovering the matter power spectrum and a substantial fraction of cosmic web morphology.
+% CITATION STATUS , keys used below NOT YET in the .bib (verified
+% 2026-07-29, see bibliography/citations_needed.md for full details):
+% gunn_peterson_1965, lynds_1971, rauch_1998, pichon_2001, caucci_2008,
+% lee_2014, lee_2018, miralda-escude_1996, schaye_2000, viel_2002,
+% bolton2017, horowitz2019, horowitz2021, kingma_welling_2013,
+% villaescusa-navarro_2021, lanusse_2021, horowitz2022, legin_2023,
+% remy_2023. Already-confirmed-present keys used below: Meiksin_2009,
+% McQuinn_2016, Bi_1997, feng_fastpm_2016, chung_diffusion_2023,
+% ono_debiasing_2024, Maitra_2026.
 
-DeepCHART and the approach developed in this chapter are best understood as two answers to the same underlying question — how to invert a fixed, known forward model with the help of a learned, simulation-based prior — rather than as competing solutions to be ranked against one another. An amortized VAE such as DeepCHART is trained end-to-end on paired (sightline, $\Delta_{\rm DM}$) data for a specific pairing of survey geometry and noise model; once trained, inference is near-instantaneous, but the learned mapping is entangled with the forward model used during training, so a new sightline density, S/N distribution, or instrumental resolution requires retraining, and the network delivers a single deterministic point estimate of $\Delta_{\rm DM}$ per input, with no native uncertainty quantification and no access to the gas-phase fields that co-determine the absorption. This thesis instead builds on the diffusion posterior sampling (DPS) framework (Chung et al. 2022), in which an unconditional generative prior over the *field itself* is trained once, without any paired data, independently of any particular observational setup, and is then combined at inference time with an explicit, differentiable forward model through a likelihood-guidance term added to the reverse diffusion process. Because the prior and the forward model are decoupled, the same trained diffusion prior can be redeployed against different sightline geometries, noise levels, or even different observables simply by changing the mask, with no retraining, and each reverse diffusion trajectory yields a genuine posterior sample over the full five-field state rather than a point estimate, so that uncertainty can be quantified directly from the spread across samples. This complementarity between amortized and posterior-sampling approaches is increasingly recognized elsewhere in cosmology: score-based and diffusion priors have been used for posterior sampling of initial conditions from non-linear large-scale structure (Legin et al. 2023), for debiasing dark matter reconstructions from galaxies in CAMELS (Ono et al. 2024), and for weak lensing mass-mapping from both simulated and real DES-Y3 shear data (Remy et al. 2023), in each case trading the speed of amortized inference for explicit, model-agnostic posterior characterization.
+The intergalactic medium (IGM) at high redshift holds the majority of the Universe's baryonic content, and on megaparsec scales its distribution traces the underlying dark matter field shaped by gravitational instability~\citep{Meiksin_2009,McQuinn_2016,Bi_1997}. The Lyman-$\alpha$ (Ly$\alpha$) forest , the pattern of absorption imprinted by intervening neutral hydrogen on the spectra of background quasars and galaxies , remains the most direct observational window onto this diffuse structure~\citep{Gunn_peterson,Lynds_1971,Williger_2000}. For over two decades, sufficiently dense grids of background sightlines have made it possible to move beyond one dimensional flux statistics and reconstruct the IGM tomographically in three dimensions~\citep{caucci2008recoveringtopologyigmz2,Lee_2014,Lee_2018}, a program now being extended by surveys such as DESI Ly$\alpha$ QSO, WEAVE-QSO, and Subaru-PFS/CLAMATO/LATIS, and, in the coming decade, by ELT/MOSAIC, which will push sightline separations down toward $1\Mpch$. At these finer separations, the reconstruction problem becomes increasingly sensitive to the baryonic physics , pressure smoothing, thermal broadening, and radiative feedback , that decouples the IGM from the pure dark matter field below $\sim 1\,\mathrm{Mpc}$~\citep{schaye_2000,Viel_2002,nasir2017effect}, motivating reconstruction methods that can go beyond the linear, large-scale regime.
 
-In this chapter we introduce the diffusion posterior sampling (DPS) framework to this thesis and apply it to the specific inverse problem of Lyman-alpha tomography. We train a variational diffusion model (VDM) prior directly on five physical fields — dark matter density ($\Delta_{\rm DM}$), gas density ($\Delta_{\rm gas}$), neutral hydrogen fraction ($x_{\rm HI}$), temperature ($T$), and peculiar velocity ($v_{\rm pec}$) — extracted from the same Sherwood hydrodynamical simulations underlying DeepCHART, and pair it with a fully differentiable, GPU-vectorized Voigt-profile forward model, validated bitwise against an independent optical-depth pipeline, that maps these fields onto synthetic Lya forest spectra. Posterior samples of the joint 3D field are then drawn by guiding the reverse diffusion process with the gradient of the data likelihood at each denoising step, following the DPS formalism, with a structural consistency term and a scheduled guidance strength $\zeta$ added to stabilize sampling in three dimensions. A notable feature of this forward model is that $\Delta_{\rm DM}$ itself never enters the optical-depth calculation directly — only $\Delta_{\rm gas}$, $x_{\rm HI}$, $T$, and $v_{\rm pec}$ do — so any recovery of the dark matter field is mediated entirely by correlations the prior has learned between dark matter and the gas-phase tracers, rather than by a direct likelihood constraint; this makes the dark matter reconstruction a genuine test of what the learned prior encodes about structure formation. Preliminary reconstructions at a sightline configuration matched to Subaru-PFS are encouraging and broadly competitive with DeepCHART's reported accuracy on the same metric, while additionally returning the four gas-phase fields and a calibrated posterior rather than a single point estimate; a quantitative, tile-averaged comparison across the full simulation volume, together with the associated hyperparameter and sample-size sensitivity studies, is deferred to Section 4.6 once full-box validation is complete. We further develop a latent-space variant of this pipeline, in which a frozen, KL-regularized VAE compresses the anisotropic $1024\times32\times32$ input volume into a compact $128\times16\times16$ latent representation prior to diffusion, substantially reducing the cost of posterior sampling in 3D.
+Classical tomographic reconstruction has relied on Wiener filtering or Gaussian-process interpolation of the sparse sightline data~\citep{Lee_2014,Lee_2018}, which is efficient but smooths out precisely the small-scale, non-linear structure that upcoming surveys are designed to resolve. More recent semi-analytic approaches, notably TARDIS~\citep{horowitz_2019,horowitz_2021}, improve on this by embedding a physically motivated prior , nonlinear structure evolved forward with FastPM~\citep{feng_fastpm_2016} , inside an iterative maximum-likelihood scheme, using the Fluctuating Gunn-Peterson Approximation as the forward model linking density to absorption. This is a more faithful treatment of gravitational nonlinearity, but it inherits the limitations of FGPA at small scales and is computationally expensive, since every posterior sample requires re-running the gravity solver.
 
-The remainder of this chapter is organized as follows. Section 4.2 describes the construction of the 3D training dataset from the Sherwood simulations and the anisotropic compression used to prepare it for both pixel- and latent-space diffusion. Section 4.3 details the architecture and training of the variational diffusion prior, together with the frozen VAE used in the latent formulation. Section 4.4 presents the differentiable Voigt forward model, its per-field dependencies and degeneracies, and its validation against an independent optical-depth pipeline. Section 4.5 lays out the diffusion posterior sampling algorithm itself — the Bayesian decomposition into score and likelihood-guidance terms, the Tweedie estimate, and the three-pass memory-efficient gradient computation — as adapted to this three-dimensional, multi-channel setting. Section 4.6 presents reconstruction results — voxel-wise fidelity for all five fields, recovery of the matter power spectrum, a hyperparameter sweep over guidance strength and sightline density, and posterior calibration — under a survey configuration matched to that considered for DeepCHART, enabling a direct, like-for-like comparison between the amortized and posterior-sampling paradigms on the same simulation suite. Section 4.7 discusses the implications of these results, including what the free (likelihood-blind) recovery of $\Delta_{\rm DM}$ implies about the prior, and directions for future work.
+The last few years have seen deep generative models offer a third route: rather than approximating the forward problem or the prior analytically, learn one or both directly from hydrodynamical simulations. Variational autoencoders, GANs, Transformers diffusion models have all been used to emulate non-linear cosmological fields. \citet{Moriwaki_2025} have applied generative Transformers to generate galaxy properties which enable fast generation of Line intensity maps and and redshift surbey catalogs. \citet{Horowitz_2022} showed that a VAE trained on simulations can learn the mapping between dark matter and baryonic tracers directly, without any FGPA-like approximation. This is the paradigm adopted by DeepCHART~\citep{Maitra_2026}, developed and trained on the same $z=2.5$, $(40\,h^{-1}\mathrm{cMpc})^3$ Sherwood hydrodynamical simulations used throughout this chapter. DeepCHART uses a 3D U-Net VAE to map sparse Ly$\alpha$ forest sightlines, optionally combined with coeval galaxy positions , directly onto the 3D dark matter density field in a single amortized forward pass, achieving a voxel-wise Pearson correlation of $\rho \simeq 0.77$ (on a $\sigma = 2\,h^{-1}\mathrm{cMpc}$-smoothed, dynamic-range-restricted $\dmLOS$) at a sightline separation of $d_\perp \simeq 2.4\,h^{-1}\mathrm{cMpc}$ matched to the Subaru-PFS Deep survey.
 
----
+\section{Novelty: Generative prior}
+DeepCHART and the approach developed in this chapter are fundamentally different. An amortized VAE such as DeepCHART is trained endto end on paired (sightline, $\dmLOS$) data for a specific pairing of survey geometry and noise model; once trained, inference is near-instantaneous, but the learned mapping is strongly coupled with the forward model used during training, so a new sightline density, or instrumental resolution requires retraining, and the network delivers a single deterministic point estimate of $\dmLOS$ per input. This work, instead builds on the diffusion posterior sampling (DPS) framework~\citep{chung_diffusion_2023}, in which an unconditional generative prior over the baryonic and $\dmLOS $ \emph{fields itself} is \emph{trained once}, without any paired flux data, independently of any particular observational setup, and is then combined at inference time with an explicit, differentiable forward model through a likelihood-guidance term added to the reverse diffusion process. Because the prior and the forward model are decoupled, and given that the model never sees flux during training, the same trained diffusion prior can be redeployed against different sightline geometries, noise levels, or even different observables simply by changing the observed flux line density, with no retraining, and each reverse diffusion trajectory yields a genuine posterior sample over the full state rather than a point estimate, so that uncertainty can be quantified directly from the spread across samples. 
 
-*References cited above (to be merged into the thesis-wide bibliography): Bi & Davidsen 1997; Bolton et al. 2017; Caucci et al. 2008; Chung, Kim, McCann, Klasky & Ye 2022; Croft et al. 1998; Feng, Chu, Seljak & McDonald 2016; Gunn & Peterson 1965; Horowitz, Lee, White, Krolewski & Ata 2019; Horowitz, Zhang, Lee & Kooistra 2021; Horowitz, Dornfest, Lukić & Harrington 2022; Kingma & Welling 2013; Lanusse et al. 2021; Lee et al. 2014; Lee et al. 2018; Legin, Ho, Lemos, Perreault-Levasseur, Ho, Hezaveh & Wandelt 2023; Lynds 1971; Maitra, Viel & Kulkarni 2026 (DeepCHART, arXiv:2507.00135, MNRAS Vol. 549); McQuinn 2016; Meiksin 2009; Miralda-Escudé, Cen, Ostriker & Rauch 1996; Ono, Park, Mudur, Ni, Cuesta-Lazaro & Villaescusa-Navarro 2024; Pichon, Vergely, Rollinde, Colombi & Petitjean 2001; Rauch 1998; Remy et al. 2023; Schaye, Theuns, Rauch, Efstathiou & Sargent 2000; Viel, Matarrese, Mo, Theuns & Haehnelt 2002; Villaescusa-Navarro et al. 2021.*
+\vspace{\baselineskip}
 
-% NOTE: This chapter covers both:
-%   - DM field reconstruction (Sec.~\ref{sec:dps_dm})
-%   - Lyman-alpha sightline reconstruction (Sec.~\ref{sec:dps_lya})
+In this chapter we introduce the diffusion posterior sampling (DPS)~\ref{sec:dps_theory} framework to this thesis and apply it to the specific inverse problem of Lyman-$\alpha$ tomography. We train a variational diffusion model (VDM) prior directly on five physical fields , dark matter density ($\dmLOS$), gas density ($\gasLOS$), neutral hydrogen fraction ($\HILOS$), temperature ($T$), and peculiar velocity ($\vpec$), extracted from the same Sherwood hydrodynamical simulations underlying DeepCHART, and pair it with a fully differentiable, GPU-vectorized Voigt-profile forward model that maps these fields onto synthetic Ly$\alpha$ forest spectra. Posterior samples of the joint 3D field are then drawn by guiding the reverse diffusion process with the gradient of the data likelihood at each denoising step, following the DPS formalism, with a structural consistency term and a scheduled guidance strength $\zeta$ added to stabilize sampling in three dimensions. A notable feature of this forward model is that $\dmLOS$ itself never enters the optical depth calculation directly , only $\gasLOS$, $\HILOS$, $T$, and $\vpec$ do, so any recovery of the dark matter field is mediated entirely by correlations the prior has learned between dark matter and the gas-phase tracers, rather than by a direct likelihood constraint. This makes the dark matter reconstruction a genuine test of what the learned prior encodes about structure formation. 
 
-%% ---- DM RECONSTRUCTION ------------------------------------
-
-
-% =====================================================================
-% Chapter 4 -- Section: Data Preparation and Optical Depth Theory
-% Sits after Section 4.1 (Introduction); numbered here as 4.2--4.3
-% assuming the intro's roadmap (chapter4_introduction.md) is unchanged.
-% =====================================================================
+The remainder of this chapter is organized as follows. Section~\ref{sec:lya-data-prep} describes the construction of the 3D training dataset from the Sherwood simulations. Section~\ref{sec:dps_architecture} details the architecture and training of the variational diffusion prior, together with the frozen VAE used in the latent formulation. Section~\ref{sec:lya-theory} presents the differentiable Voigt forward model. Section~\ref{sec:dps_theory} lays out the diffusion posterior sampling algorithm itself, the Bayesian decomposition into score and likelihood-guidance terms, the Tweedie estimate, and memory-efficient gradient computation, as adapted to this three-dimensional, multi-channel setting. Section~\ref{sec:dps_results} presents reconstruction results, voxel-wise fidelity for all five fields, recovery of the matter power spectrum. Lastly, Section~\ref{sec:dps_discussion} discusses the implications of these results, including what the free (likelihood-blind) recovery of $\dmLOS$ implies about the prior, and directions for future work.
 
 \section{Data Preparation}
 \label{sec:lya-data-prep}
 
+% CITATION STATUS , keys used in this section NOT YET in the .bib:
+% bolton2017, puchwein2023, monaghan1992, puchwein2019. See
+% bibliography/citations_needed.md for details.
+
 \subsection{Hydrodynamical simulations and line-of-sight fields}
 \label{sec:lya-sims}
 
-The training and validation data for this chapter are drawn from the same suite of Sherwood-Relics hydrodynamical simulations \citep{bolton2017,puchwein2023} used by \citet{Maitra_2026}, for direct comparability. These simulations are run with GADGET-3, self-consistently solving the coupled photoionization and thermal evolution equations of the gas under a specified ultraviolet background, within a periodic cube of comoving side $L_{\rm box}=40\,h^{-1}\mathrm{cMpc}$ populated with $2\times512^3$ dark matter and gas particles. Nine random-seed realizations are used for training the diffusion prior and one is reserved for held-out validation, following the same train/test split as \citet{Maitra_2026}.
+The training and validation data for this chapter are drawn from the same suite of Sherwood-Relics hydrodynamical simulations \citep{bolton_sherwood_2017,puchwein_sherwood-relics_2023} used by \citet{Maitra_2026}, for direct comparability. These simulations are run with GADGET-3, self-consistently solving the coupled photoionization and thermal evolution equations of the gas under a specified ultraviolet background, within a periodic cube of comoving side $L_{\rm box}=40\,h^{-1}\mathrm{cMpc}$ populated with $2\times512^3$ dark matter and gas particles. Eight random-seed realizations are used for training and validating the diffusion prior and two are reserved for testing..
 
-Rather than gridding the raw particle data directly, physical quantities are first evaluated along one-dimensional sightlines threading the box, in a configuration matching Ly$\alpha$ forest tomography surveys. At redshift $z=2.4$, a sightline is discretized into $n_{\rm bins}$ velocity/position bins, and at each bin the local gas overdensity $\Delta_{\rm gas}$, temperature $T$, neutral hydrogen fraction $x_{\rm HI}$, and line-of-sight peculiar velocity $v_{\rm pec}$ are obtained via standard SPH kernel interpolation from the neighboring gas particles,
+Rather than gridding the raw particle data directly, physical quantities are first evaluated along one-dimensional sightlines threading the box, in a configuration matching Ly$\alpha$ forest tomography surveys. At redshift $z=2.4$, a sightline is discretized into $n_{\rm bins}$ velocity/position bins, and at each bin the local gas overdensity $\gasLOS$, temperature $T$, neutral hydrogen fraction $\HILOS$, and line-of-sight peculiar velocity $\vpec$ are obtained via standard SPH kernel interpolation from the neighboring gas particles,
 \begin{equation}
 f_i = \sum_j f_j\,\frac{m_j}{\rho_j}\,W\!\left(|\mathbf{r}_i-\mathbf{r}_j|,\,h_j\right),
 \label{eq:sph-interp}
 \end{equation}
-where $f_j$, $m_j$, and $\rho_j$ are the quantity, mass, and density carried by particle $j$, and $W$ is the standard cubic-spline smoothing kernel \citep{monaghan1992,Maitra_2026}. The neutral hydrogen fraction $x_{\rm HI}$ and temperature $T$ carried by each gas particle are set on-the-fly during the simulation by GADGET-3's coupled photoionization and thermal evolution solver under the ultraviolet background of \citet{puchwein2019}, including self-shielding corrections that suppress photoionization in dense gas; these particle-level values are then interpolated onto the sightline grid via Eq.~\ref{eq:sph-interp} exactly as $\Delta_{\rm gas}$ and $v_{\rm pec}$ are. The dark matter overdensity $\Delta_{\rm DM}$ is obtained analogously from the dark matter particle distribution and gridded onto the same sightline geometry, but — as emphasized in Section~4.1 — it is retained purely as a target field for the diffusion prior and never enters the optical-depth calculation described below.
+where $f_j$, $m_j$, and $\rho_j$ are the quantity, mass, and density carried by particle $j$, and $W$ is the standard cubic-spline smoothing kernel \citep{sph1992,Maitra_2026}. The neutral hydrogen fraction $\HILOS$ and temperature $T$ carried by each gas particle are set on-the-fly during the simulation by GADGET-3's coupled photoionization and thermal evolution solver under the ultraviolet background of \citet{puchwein_sherwood-relics_2023}, including self-shielding corrections that suppress photoionization in dense gas; these particle-level values are then interpolated onto the sightline grid via Eq.~\ref{eq:sph-interp} exactly as $\gasLOS$ and $\vpec$ are. The dark matter overdensity $\dmLOS$ is obtained analogously from the dark matter particle distribution and gridded onto the same sightline geometry, but, as emphasized in Section~\ref{sec:dps_intro} , it is retained purely as a target field for the diffusion prior and never enters the optical-depth calculation described in Section~\ref{sec:lya-theory}.
 
 \subsection{Sightline data format}
 \label{sec:lya-format}
 
-Each simulation output is stored as a flat binary file containing one full set of sightlines through the box, together with an independently computed reference optical-depth file used for forward-model validation (Section~\ref{sec:lya-validation}). The sightline file layout is summarized in Table~\ref{tab:lya-format}.
+Each simulation output is stored as a flat binary file containing one full set of sightlines through the box. The sightline file layout is summarized in Table~\ref{tab:lya-format}.
 
 \begin{table}[h!]
 \centering
@@ -65,55 +83,143 @@ $z,\,\Omega_m,\,\Omega_\Lambda,\,\Omega_b,\,h,\,L_{\rm box},\,X_h$ & 7 scalars &
 $n_{\rm bins}$, $n_{\rm los}$ & 2 scalars & Pixels per sightline; number of sightlines \\
 \texttt{ilos}, \texttt{xlos}, \texttt{ylos}, \texttt{zlos} & $(n_{\rm los},)$ & Sightline axis and transverse position \\
 \texttt{posaxis}, \texttt{velaxis} & $(n_{\rm bins},)$ & Comoving position and Hubble velocity grids \\
-$\Delta_{\rm gas}$, $x_{\rm HI}$, $T$, $v_{\rm pec}$ & $(n_{\rm los},n_{\rm bins})$ & SPH-interpolated fields (Eq.~\ref{eq:sph-interp}) \\
+$\gasLOS$, $\HILOS$, $T$, $\vpec$ & $(n_{\rm los},n_{\rm bins})$ & SPH-interpolated fields (Eq.~\ref{eq:sph-interp}) \\
 \hline
 \end{tabular}
 \end{table}
 
-The reference optical depth $\tau_{\rm true}$ is stored separately as a headerless array of shape $(n_{\rm los},n_{\rm bins})$, computed independently by our collaborators using a validated pipeline; this file is used exclusively to check the forward model developed in Section~\ref{sec:lya-theory} and plays no role in training the diffusion prior.
+The reference optical depth $\tau_{\rm true}$ is stored separately as an array of shape $(n_{\rm los},n_{\rm bins})$. For our work, the values of $(n_{\rm los},n_{\rm bins})$ for the full simulations are $16,384~(128\times128)$ and $1,024$ respectively. As explained in the later section, we train on smaller chunks of this data, and so the values during training are$n_{\rm los}$ is $1,024~(32\times32)$, with $n_{\rm bins}$ being unchanged.
+
+\section{The Variational Diffusion Prior}
+\label{sec:dps_architecture}
+
+Every other diffusion model in this thesis , \HALOgen\ and \LODI\ in Chapter~\ref{ch:lodi}, \FOLD\ in Chapter~\ref{ch:cosmofold}, and its posterior-sampling extension in Chapter~\ref{ch:field_pos} , is a \emph{conditional} model, trained to map one field onto another (dark matter to halos, dark matter to gas temperature, stellar density to dark matter). The prior used in this chapter is different in kind: it is \emph{unconditional}, trained to model the joint distribution $p(\bm{x}_0)$ of the five-field state itself,
+\begin{equation}
+    \bm{x}_0 = \big(\dmLOS,\,\gasLOS,\,\HILOS,\,T,\,\vpec\big),
+    \label{eq:dps_state}
+\end{equation}
+extracted from the Sherwood-Relics simulations (Section~\ref{sec:lya-sims}), with no conditioning information supplied at training time at all. This is precisely what makes the same trained network reusable, at inference time, against different sightline geometries, noise levels, or observational setups (Section~\ref{sec:dps_theory}): conditioning on a specific observation only ever enters through the likelihood-guidance term added to the reverse process, never through the network's own training.
+
+\subsection{Multi-field representation}
+\label{sec:dps_multifield}
+
+The five physical fields of Eq.~\ref{eq:dps_state} are stacked as five channels of a single volumetric tensor, $\bm{x}_0 \in \mathbb{R}^{5\times N_x\times N_y\times N_z}$, and modelled jointly by one network, rather than trained as five independent single-channel diffusion models. Treating them jointly helps with learning the implicit cross-field correlations during training , in particular between $\dmLOS$ and the four gas-phase fields that actually enter the forward model of Section~\ref{sec:lya-theory}, that make the eventual likelihood-blind recovery of $\dmLOS$ possible at all (Section~\ref{sec:dps_theory}). Five independently-trained priors would share no such correlations. The denoising network itself follows the same 3D U-Net with residual blocks and a self-attention bottleneck used throughout this thesis (Sections~\ref{sec:cnn_unet} and~\ref{sec:attention} of the Introduction; Section~\ref{sec:denoise_arch} of Chapter~\ref{ch:lodi}), adapted to a 5-channel input and output rather than the single-channel case used elsewhere.
+
+\subsection{Latent diffusion and Anisotropic geometry}
+\label{sec:dps_latent}
+
+Because the training volume of $40^3 (\Mpch)^3$ is built from 1D sightlines threading the box (Section~\ref{sec:lya-sims}) rather than read directly off a native 3D grid, the natural tensor shape is highly anisotropic: The line of sight resolution is $\approx0.039\Mpch$(Ideally this would be set by the spectral resolution a survey would deliver), against a coarser resolution of $\approx0.31\Mpch$ along the two transverse directions (set by the physical separation between neighbouring sightlines). We denote this native shape $N_\parallel\times N_\perp\times N_\perp = 1024\times128\times128$. To get multiple samplesa and also due to memory reasons, we chunk these simulations into $1024\times32\times32$ sub volumes. Note that we do not chunk the LOS direction since we want the diffusion model to see the full line of sight structure in its training. Running the reverse diffusion process directly on a tensor of this size, for the many reverse steps required per posterior sample and the many independent samples needed to characterize the posterior (Section~\ref{sec:dps_theory}), is computationally demanding, especially if we want to use the Attention mechanism (Sec.\ref{sec:attention}). We therefore compress the 5 channel training data into a latent representation which has has a dimension of $8\times128\times16\times16$, resulting in a 20 times compression of the data. We denote this latent space by $\bm{x}_0^L$. This said compression is done via training a separate variational autoencoder (VAE), the details of which are explained in the next section. A Variational Diffusion model (\ref{sec:vdm}) is then trained to learn the prior of this latent space $\latent$. The the frozen VAE decoder is used only once, at the very end, to map the final denoised latent sample back to the native five-field volume.
+
+\subsubsection{Encoding the line of sights}
+\label{sec:VAE}
+
+As mentioned, to perform diffusion on the full voxel space, we would need much more GPU memory than available, especially if we wanted to employ the attention mechanism. Additionally, compressing the data removes noisy small scale features from the data, which benefits us since a resolution of $0.039\Mpch$ is much smaller than the Jeans scale ($\approx1\Mpch$), and sub-Jeans scales carry negligible correlated physical information that would be smoothed away in the analysis regardless, a practice also implemented in other related works(\citet{Maitra_2026}). A third reason is that we found out that training on a compressed data point better preserves the long range correlations, especially in the case of $\vpec$ in this case. Last, since training the pipeline in the native resolution on the diffusion model takes days, compressing the data for the diffusion model drastically reduces training time. In our case, the training time went from about 50 hours to abut 3 hours total.
+\vspace{\baselineskip}
+
+Hence, for this work, we decided to do a moderate compression of $20\times$, a sweet spot between very high compression, which could result in losing too much small scale information, and very light compression, which would result in no potential benefit of this added machinery. 
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.90\linewidth]{chapters//ch3_dps/VAE.pdf}
+    \caption{The convolution structure of the VAE described in sec.~\ref{sec:VAE}. There are 3 downsampling blocks with the latent vector $\latent$ at the bottleneck. The \emph{spatial} dimensions are mentioned at each level.}
+    \label{fig:VAE_compress}
+\end{figure}
+The architecture of the autoencoder is shown in Fig.~\ref{fig:VAE_compress}. An important aspect of the architecture is that the downsampling performed in each encoder block is anisotropic, and is learned via strided convolutions. Across the three downsampling blocks, the transverse dimensions are reduced by a factor of 2 in each direction, while the line-of-sight dimension is reduced by a factor of 8. This choice preserves more of the spatial correlation structure in the transverse directions, which are initially sampled at a lower resolution compared to the line-of-sight direction.
+
+The bottleneck of the VAE provides the compressed latent representation of the input data $\bm{x}_0$. Rather than encoding each input into a deterministic latent vector, the encoder parameterizes a Gaussian distribution in the latent space by predicting the mean $\bm{\mu}$ and standard deviation $\bm{\sigma}$ for each latent component. Consequently, the final encoder output contains twice the number of channels required for the latent representation, corresponding to the parameters of this distribution. During training, the latent representation $\bm{z}$ is sampled using the reparameterization trick:
+\begin{equation}
+\label{eq:param_trick}
+    \bm{z} = \bm{\mu} + \bm{\sigma}\bm{\epsilon},
+    \qquad \bm{\epsilon} \sim \mathcal{N}(0,\mathbf{I}).
+\end{equation}
+
+
+\subsection{Training}
+\label{sec:dps_training}
+The training happens in 2 stages. In the first stage, a VAE(Sec.~\ref{sec:VAE}) is trained on the native resolution $5\times1024\times32\times32$ dimensional $\bm{x}_0$ data. After training, the VAE is frozen and the encoder is then used to encode all the training $\bm{x}_0$ into $8\times128\times16\times16$ dimensional latent $\latent$. The way the encoding happens is that we take the predicted $\bm{\mu}$ for each input $\bm{x}_0$ and set the corresponding $\bm{\sigma}$ to zero. This is done to ensure stable diffusion model training and reducing the variance coming from the VAE. From here on, this truncated $\bm{\mu}$ only latent space will be called $\latent$.
+The diffusion prior is trained on this $\latent$ with the same variational diffusion model (VDM) objective used throughout this thesis (Section~\ref{sec:vdm} of Chapter~\ref{ch:lodi}): a learned, continuous-time noise schedule $\gamma(t)$ and the ELBO loss (Sec.~\ref{sec:vdm_elbo}). 
+\subsubsection{Training the VAE}
+\label{sec:VAE_training}
+
+The VAE is trained in two stages for numerical stability. In Stage 1 (steps 0–2000), we minimize the L1 mean absolute error reconstruction loss and KL divergence (See Eq.~\ref{eq:kl_div}) terms:
+\begin{equation}
+\mathcal{L}_{\text{stage 1}} = \|\bm{x}_0 - \hat{\bm{x}}_0\|_1 + \beta\, \text{KL}\!\big(q_\phi(\latent|\bm{x}_0) \,\|\, p(\latent)\big),
+\label{eq:vae_loss_stage1}
+\end{equation}
+where $\beta = 10^{-4}$ weights the KL term, $\hat{\bm{x}}_0$ is the reconstructed native field and $p(\latent)\sim\mathcal{N}(\bm{0},\mathbf{I})$.
+
+In Stage 2 (steps 2,000–4,000), we introduce an additional spectral loss term with linear warmup to preserve fourier modes explicitly:
+\begin{equation}
+\mathcal{L}_{\text{stage 2}} = \|\bm{x}_0 - \hat{\bm{x}}_0\|_1 + \beta\, \text{KL}\!\big(q_\phi(\latent|\bm{x}_0) \,\|\, p(\latent)\big) + \lambda_{\text{spec}}(t)\,\mathcal{L}_{\text{spec}},
+\label{eq:vae_loss_stage2}
+\end{equation}
+
+
+The spectral loss that penalizes mismatch in the 1D power spectrum along the line of sight:
+
+\begin{equation}
+\mathcal{L}_{\text{spec}} = \sum_{c=1}^{5} w_c \left\langle \left[\log P_{\text{1D,rec}}^{(c)}(k) - \log P_{\text{1D,GT}}^{(c)}(k)\right]^2 \right\rangle,
+\label{eq:spectral_loss}
+\end{equation}
+where the warmup schedule ramps the spectral weight from 0 to $\lambda_{\text{spec}} = 0.1$ over 500 steps. This warmup ramping helped stabilize training.
+
+$P_{\text{1D,rec}}^{(c)}(k)$ and $P_{\text{1D,GT}}^{(c)}(k)$ are the 1D power spectra along the LoS axis for reconstructed and ground-truth fields respectively(computed via FFT and averaged over the transverse plane), the weights are $\bm{w} = [1.0, 1.0, 3.0, 1.0, 1.5]$ for channels $[\dmLOS, \gasLOS, \HILOS, T, \vpec]$. The heavier weight on x$_{\rm HI}$ ($w_2 = 3.0$) ensures faithful reconstruction of the ionization structure which directly couples to the observed Ly$\alpha$ absorption.
+
+\vspace{\baselineskip}
+
+For training, we use 8 3D simulations from the Sherwood simulations of side $40(\Mpch)^3$, gridded at $(1024,128,128)$ for each field, run with the same astrophysics and cosmology, but with different initial condition seed. Each of the 5 channels, corresponding to $[\dmLOS, \gasLOS, \HILOS, T, \vpec]$, are sub chunked into training samples $\bm{x}_0$ arrays of shape $(5,1024,32,32)$. To maximize the number of training data points, we create these chunks with overlapping volumes to get 625 chunks per simulation. This gives us a total of 5,000 sims for training and validating. We do a 70\%/30\% training/validation split.
+
+\subsubsection{Training the latent VDM}
+\label{sec:latent_vdm}
+Now to train the VDM, we first freeze the encoder of the autoencoder and produce the 5,000 $\latent$ data points. At this point it must be mentioned that we are in fact reusing the same data used for training and validating the VAE, for this setup, since we are limited by the training sample size. Our VDM architecture closely follows Fig.~\ref{fig:DenoiseUnet} and the exact same machinery as described in Sec~\ref{sec:vdm} and~\ref{sec:vdm_elbo}. The only crucial changes are that instead of isotropically pooling the spatial dimensions at every downsampling block, we follow the same idea used in the VAE and perform anisotropic downsampling. There are 3 downsampling blocks with the following compression factors: $(2,2,2),(2,2,2),(2,1,1)$. So the first 2 blocks are isotropically downsampling by a factor of 2 for each axis, but the third block only downsamples the line of sight axis. Besides this, there are 8 input channels to the diffusion model. The training happens for a total of 450 epochs, with a 75\%/25\% training/validation split. The model weights with the lowest validation loss are stored.
+
+\vspace{\baselineskip}
+
+To get back the generated $\bm{x}_0$, we use the frozen decoder of the VAE on the diffusion model outputs.
+
 
 \section{Theory of the Lyman-$\alpha$ Optical Depth}
 \label{sec:lya-theory}
 
+
 \subsection{Physical picture}
 \label{sec:lya-physics}
 
-A quasar or star-forming galaxy at redshift $z_s$ illuminates the intervening intergalactic medium along the line of sight; each parcel of neutral hydrogen between source and observer resonantly scatters photons out of the line of sight near the rest-frame Ly$\alpha$ wavelength $\lambda_\alpha = 1215.6701\,\text{\AA}$. Because the Hubble flow maps physical position monotonically onto observed wavelength, a single sightline through the simulation box acts as a one-way ``redshift odometer'': gas at comoving position $x$ imprints absorption at a velocity (equivalently, wavelength) offset
+A quasar or star-forming galaxy at redshift $z_s$ illuminates the intervening intergalactic medium along the line of sight. Each parcel of neutral hydrogen between source and observer resonantly scatters photons out of the line of sight near the rest-frame Ly$\alpha$ wavelength $\lambda_\alpha = 1215.6701\,\text{\AA}$. Gas at comoving position $x$ imprints absorption at a velocity (equivalently, wavelength) offset
 \begin{equation}
-u(x) = v_{\rm H}(x) + v_{\rm pec}(x),
+u(x) = v_{\rm H}(x) + \vpec(x),
 \label{eq:redshift-space}
 \end{equation}
-the sum of the local Hubble velocity $v_{\rm H}(x)=H(z)\,x_{\rm phys}$ and the gas's peculiar velocity along the line of sight, $v_{\rm pec}(x)$. This redshift-space mapping is what allows $v_{\rm pec}$ to distort the apparent position of absorption features relative to the real-space density peaks that sourced them.
+the sum of the local Hubble velocity $v_{\rm H}(x)=H(z)\,x_{\rm phys}$ and the gas's peculiar velocity along the line of sight, $\vpec(x)$. This redshift-space mapping is what allows $\vpec$ to distort the apparent position of absorption features relative to the real-space density peaks that sourced them.
 
 Two independent physical effects broaden the absorption profile of a parcel of gas away from a single frequency:
 
 \begin{itemize}
-\item \textbf{Thermal Doppler broadening.} Hydrogen atoms at temperature $T$ have a Maxwell--Boltzmann distribution of line-of-sight velocities, so photons resonant with atoms of different thermal velocity are absorbed at correspondingly shifted frequencies. This produces a Gaussian absorption profile of characteristic width (the Doppler parameter)
+\item \textbf{Thermal Doppler broadening.} Hydrogen atoms at temperature $T$ have a Maxwell Boltzmann distribution of line-of-sight velocities, so photons resonant with atoms of different thermal velocity are absorbed at correspondingly shifted frequencies. This produces a Gaussian absorption profile of characteristic width (the Doppler parameter)
 \begin{equation}
 b = \sqrt{\frac{2k_B T}{m_H}}.
 \label{eq:doppler-b}
 \end{equation}
 
-\item \textbf{Natural (radiative) damping.} The finite lifetime of the excited $2p$ state, set by the Einstein spontaneous-decay rate $\Gamma_{\rm Ly\alpha}=6.265\times10^8\,{\rm s^{-1}}$, gives the transition an intrinsic Lorentzian linewidth via the energy--time uncertainty relation. This produces extended power-law wings that fall off as $\Delta v^{-2}$ rather than exponentially, controlled by the dimensionless damping parameter
+\item \textbf{Natural (radiative) damping.} The finite lifetime of the excited $2p$ state, set by the Einstein spontaneous-decay rate $\Gamma_{\rm Ly\alpha}=6.265\times10^8\,{\rm s^{-1}}$, gives the transition an intrinsic Lorentzian linewidth via Heisenberg's the energy time uncertainty relation. This produces extended power-law wings that fall off as $\Delta v^{-2}$ rather than exponentially, controlled by the dimensionless damping parameter
 \begin{equation}
 a = \frac{\Gamma_{\rm Ly\alpha}\,\lambda_\alpha}{4\pi b}.
 \label{eq:voigt-a}
 \end{equation}
 \end{itemize}
 
-The full line profile is the convolution of the Gaussian Doppler core with the Lorentzian damping wings — the \emph{Voigt profile}. Because $a\sim10^{-3}$ for Ly$\alpha$ at IGM temperatures, the profile is very nearly Gaussian near line center, with the damping term contributing only a small correction except deep in the wings.
+The full line profile is the convolution of the Gaussian Doppler core with the Lorentzian damping wings , the \emph{Voigt profile}. Because $a\sim10^{-3}$ for Ly$\alpha$ at IGM temperatures, the profile is very nearly Gaussian near line center, with the damping term contributing only a small correction except deep in the wings.
 
-A key consequence of this convolution is that the optical depth observed at a given pixel $i$ is \emph{not} a local function of the density at the corresponding position alone: gas at every other pixel $j$ along the sightline contributes to $\tau$ at pixel $i$, weighted by how far $j$'s absorption profile extends in velocity space to reach $i$. Sharp density peaks in real space are therefore smeared in velocity space by roughly $2b$ (a few tens of km s$^{-1}$ at $T\sim10^4\,$K), and peculiar velocities shift each absorption feature away from the real-space location of its sourcing density peak. This is the origin of ``redshift-space distortions'' in the Ly$\alpha$ forest and is fully captured by treating $\tau$ as a discretized convolution rather than a pointwise map.
+A key consequence of this convolution is that the optical depth observed at a given pixel $i$ is \emph{not} a local function of the density at the corresponding position alone. Gas at every other pixel $j$ along the line of sight contributes to $\tau$ at pixel $i$, weighted by how far $j$'s absorption profile extends in velocity space to reach $i$. Sharp density peaks in real space are therefore smeared in velocity space, and peculiar velocities shift each absorption feature away from the real-space location of its sourcing density peak due to Doppler effect. This is the origin of ``redshift-space distortions'' in the Ly$\alpha$ forest and is fully captured by treating $\tau$ as a discretized convolution rather than a pointwise map.
 
-\subsection{The Voigt--Hjerting function and the Tepper-Garcia approximation}
+\subsection{The Voigt function and the Tepper-Garcia approximation}
 \label{sec:voigt-hjerting}
 
-The normalized Voigt line profile can be written in terms of the dimensionless velocity offset $x=(v-u)/b$ and damping parameter $a$ via the Voigt--Hjerting function $H(a,x)$, defined so that $H(0,x)=e^{-x^2}$ recovers the pure-Doppler Gaussian core. Direct numerical evaluation of $H(a,x)$ is expensive inside a differentiable, GPU-vectorized pipeline, so we use the closed-form approximation of \citet{tepper-garcia2006},
+The normalized Voigt line profile can be written in terms of the dimensionless velocity offset $x=(v-u)/b$ and damping parameter $a$ via the Voigt function $H(a,x)$, defined so that $H(0,x)=e^{-x^2}$ recovers the pure-Doppler Gaussian core. Direct numerical evaluation of $H(a,x)$ is expensive inside a differentiable, GPU-vectorized pipeline, so we use the closed-form approximation of \citet{tepper_2006},
 \begin{equation}
 H(a,x) \approx e^{-x^2} - \frac{a}{\sqrt{\pi}\,x^2}\left[e^{-2x^2}\!\left(4x^4+7x^2+4+\frac{3}{2x^2}\right)-\frac{3}{2x^2}-1\right],
 \label{eq:tepper-garcia}
 \end{equation}
-which reduces smoothly to the Gaussian limit $H(a,x)\to e^{-x^2}$ as $x\to0$ and is accurate to better than $10^{-4}$ over the range of $a$ and $x$ relevant to the IGM. Equation~\ref{eq:tepper-garcia} is evaluated with a separate small-$x$ branch in our implementation to avoid the removable $0/0$ singularity as $x\to0$.
+which reduces smoothly to the Gaussian limit $H(a,x)\to e^{-x^2}$ as $x\to0$ and is accurate to better than $10^{-4}$ over the range of $a$ and $x$ relevant to the IGM. 
 
 \subsection{Discretized optical depth along a sightline}
 \label{sec:tau-discretized}
@@ -128,7 +234,7 @@ where $\sigma_{\rm Ly\alpha}=\sqrt{3\pi\sigma_T/8}\,\lambda_\alpha f_{\rm osc}$ 
 \bar n_{\rm H}(z) = \frac{3H_0^2}{8\pi G}\,\frac{\Omega_b X_h}{(1+z)^3\,m_H}, \qquad H_0 = 100\,h\;{\rm km\,s^{-1}\,Mpc^{-1}}.
 \label{eq:mean-nH}
 \end{equation}
-Equation~\ref{eq:tau-sum} is precisely the standard Gunn--Peterson-type optical-depth expression used throughout the Ly$\alpha$ forest literature (e.g.\ \citealt{tepper-garcia2006}), but evaluated \emph{directly} from the hydrodynamical simulation's $\Delta_{\rm gas}$, $x_{\rm HI}$, and $T$ fields rather than from an FGPA-style closure relating $x_{\rm HI}$ and $T$ to $\Delta_{\rm gas}$ alone through a fixed power-law equation of state. This is the same distinction drawn in Section~4.1 between our forward model and the FGPA-based forward model used in TARDIS \citep{horowitz2019,horowitz2021}: by construction, none of the small-scale baryonic physics (pressure smoothing, shock heating, patchy reionization) needs to be re-derived analytically, since it is already encoded in the simulation fields that Eq.~\ref{eq:tau-sum} consumes directly.
+Equation~\ref{eq:tau-sum} is precisely the standard Gunn,Peterson-type optical-depth expression used throughout the Ly$\alpha$ forest literature (e.g.\ \citealt{tepper_2006}), evaluated \emph{directly} from the hydrodynamical simulation's $\gasLOS$, $\HILOS$, and $T$ fields rather than from an FGPA-style  relating $\HILOS$ and $T$ to $\gasLOS$ alone through a fixed power-law equation of state. This is the same distinction drawn in Section~\ref{sec:dps_intro} between our forward model and the FGPA-based forward model used in TARDIS \citep{horowitz_2019}: by construction, none of the small-scale baryonic physics (pressure smoothing, shock heating, patchy reionization) needs to be re-derived analytically, since it is already encoded in the simulation fields that Eq.~\ref{eq:tau-sum} consumes directly.
 
 Because the simulation box is periodic, the velocity separation $|v_i-u_j|$ appearing inside $H$ is wrapped onto the interval $[0,v_{\rm max}/2]$, where
 \begin{equation}
@@ -137,48 +243,126 @@ v_{\rm max} = H(z)\,L_{\rm box,phys} = H(z)\,\frac{L_{\rm box}\,(1+z)^{-1}}{h}
 \end{equation}
 is the total Hubble velocity spanned by one period of the box; separations larger than $v_{\rm max}/2$ are replaced by $v_{\rm max}$ minus themselves before evaluating Eq.~\ref{eq:tepper-garcia}.
 
-Equation~\ref{eq:tau-sum} is evaluated as a dense $n_{\rm bins}\times n_{\rm bins}$ pairwise sum per sightline, the discretized analogue of the convolution integral $\tau(v) = \int dx\,n_{\rm HI}(x)\,\sigma_{\rm Ly\alpha}\,\phi(v-u(x))$  which is implemented as a fully vectorized, GPU-based and automatically differentiable operation, a requirement for its later use as the likelihood term in diffusion posterior sampling (Section~4.5).
-
-\subsection{Validation against an independent optical-depth pipeline}
-\label{sec:lya-validation}
-
-The implementation of Eq.~\ref{eq:tau-sum} was validated against the independently computed reference optical depth $\tau_{\rm true}$ described in Section~\ref{sec:lya-format}, for held-out sightlines not used anywhere else in this chapter. Figure~\ref{fig:forward-model-validation} compares the resulting transmitted flux $F=e^{-\tau}$ from both pipelines for a representative sightline; the two agree to within numerical floating-point precision, with a maximum relative error of $\sim3\times10^{-12}$ and a mean relative error of $\sim3\times10^{-14}$ across all pixels. This confirms that the forward model reproduces the reference calculation exactly, up to floating-point roundoff, and can be used as a drop-in differentiable replacement inside the posterior-sampling loop developed later in this chapter.
-
-\begin{figure}[h!]
-\centering
-% \includegraphics[width=\linewidth]{forward_model_validation.png}
-\caption{Validation of the differentiable Voigt forward model (Eq.~\ref{eq:tau-sum}) against an independently computed reference optical depth, for a representative held-out sightline. \emph{Top:} transmitted flux $F=e^{-\tau}$ from the reference pipeline and from our implementation. \emph{Bottom:} absolute relative error between the two, which remains at the level of floating-point precision ($\sim10^{-12}$--$10^{-14}$) across the full sightline.}
-\label{fig:forward-model-validation}
-\end{figure}
-
-% =====================================================================
-% Bibliography entries to add to the thesis-wide .bib file:
-%
-% @article{tepper-garcia2006, author={Tepper-Garc\'ia, T.}, journal={MNRAS}, year={2006}, volume={369}, pages={2025}}
-% @article{monaghan1992, author={Monaghan, J. J.}, journal={ARA\&A}, year={1992}, volume={30}, pages={543}}
-% @article{maitra2026deepchart, author={Maitra, S. and Viel, M. and Kulkarni, G.}, journal={MNRAS}, year={2026}, note={arXiv:2507.00135}}
-% @article{horowitz2019, author={Horowitz, B. and Lee, K.-G. and White, M. and Krolewski, A. and Ata, M.}, journal={arXiv:1903.09049}, year={2019}}
-% @article{horowitz2021, author={Horowitz, B. and Zhang, B. and Lee, K.-G. and Kooistra, R.}, journal={ApJ}, year={2021}, volume={906}, pages={110}}
-% =====================================================================
+Equation~\ref{eq:tau-sum} is evaluated as a dense $n_{\rm bins}\times n_{\rm bins}$ pairwise sum per sightline, the discretized analogue of the convolution integral $\tau(v) = \int dx\,n_{\rm HI}(x)\,\sigma_{\rm Ly\alpha}\,\phi(v-u(x))$, implemented as a fully vectorized, GPU-based and automatically differentiable operation, a requirement for its later use as the likelihood term in diffusion posterior sampling (Section~\ref{sec:dps_theory}).
 
 
-\section{Theoretical Background: Diffusion Posterior Sampling}
+
+\section{Diffusion Posterior Sampling}
 \label{sec:dps_theory}
-Talk about the idea behind using diffusion models as generative priors
 
-\section{Dark Matter Field Reconstruction}
-\label{sec:dps_dm}
-Give examples of DM reconstruction given noisy and corrupted data. Show different examples in different corruption limits.
+We now turn to the chapter's core methodological contribution: how to combine the unconditional prior of Section~\ref{sec:dps_architecture} with the differentiable forward model of Section~\ref{sec:lya-theory} to sample from the posterior over the joint field, $p(\bm{x}_0\mid\bm{y})$, given an observed (noisy) Ly$\alpha$ flux spectrum $\bm{y}$ along one or more sightlines , without ever training a network that has seen $\bm y$ or any similar observation.
 
-%% ---- LYMAN-ALPHA ------------------------------------------
-\section{Lyman-Alpha Forest Sightline Reconstruction from observed Lyman alpha flux}
-\label{sec:dps_lya}
-\subsection{Then theory of Lyman-Alpha forward model}
-Explain the theory of Lyalpha spectrum, how we calculate and the fields involved.
-\subsection{1D LOS reconstruction}
-To reconstruct the underlying baryonic and DM LOS quantities based on observed 1D Lyman alpha flux LOS.
-\subsection{Full field LOS reconstruction}
-Do the same but for the full field now.
+\subsection{Posterior sampling as guided reverse diffusion}
+\label{sec:dps_guided}
+
+Section~\ref{sec:diffusion_intro} of the Introduction (and, for the specific variational diffusion model used throughout this thesis, Section~\ref{sec:vdm} of Chapter~\ref{ch:lodi}) introduced the reverse diffusion process as a sequence of denoising steps guided by the \emph{score} of the noised data distribution, $\nabla_{\bm{z}_t}\log q(\bm{z}_t)$, estimated by the trained network through its noise prediction $\hat{\bm\epsilon}_{\bm\theta}$ (Eq.~\ref{eq:score_noise}). That score is the score of the \emph{prior}, $p(\bm{z}_t)$ , exactly right for unconditional generation, but not for sampling conditioned on an observation $\bm y$ the network never saw during training. What we actually want at each reverse step is the score of the noised \emph{posterior},
+\begin{equation}
+\nabla_{\bm{z}_t}\log p(\bm{z}_t\mid\bm{y}).
+\label{eq:dps_posterior_score}
+\end{equation}
+Bayes' theorem (Section~\ref{sec:bayesian_basics}) gives $p(\bm{z}_t\mid\bm{y})\propto p(\bm{z}_t)\,p(\bm{y}\mid\bm{z}_t)$, so in log-space the posterior score decomposes additively into a prior term and a likelihood term:
+\begin{equation}
+\nabla_{\bm{z}_t}\log p(\bm{z}_t\mid\bm{y}) = \underbrace{\nabla_{\bm{z}_t}\log p(\bm{z}_t)}_{\text{prior score (Eq.~\ref{eq:score_noise})}} \;+\; \underbrace{\nabla_{\bm{z}_t}\log p(\bm{y}\mid\bm{z}_t)}_{\text{likelihood guidance}}.
+\label{eq:dps_score_decomposition}
+\end{equation}
+The first term is exactly what the pretrained, unconditional network of Section~\ref{sec:dps_architecture} already provides, with no retraining needed. The second term, the \emph{guidance} term, is what turns that same unconditional prior into a sampler for this chapter's specific inverse problem. It is the only place any information about the observation $\bm y$, the sightline geometry, or the forward model of Section~\ref{sec:lya-theory} enters the sampling procedure at all. This is the essence of diffusion posterior sampling~\citep{chung_diffusion_2023}: replace the unconditional score with the sum in Eq.~\ref{eq:dps_score_decomposition} at every reverse step (Eq.~\ref{eq:reverse_step}), and the same reverse process that would otherwise generate an unconditional sample instead generates a sample from $p(\bm{x}_0\mid\bm{y})$.
+
+\subsection{The Tweedie estimate and the likelihood approximation}
+\label{sec:dps_tweedie}
+
+The difficulty with Eq.~\ref{eq:dps_score_decomposition} is that the guidance term is not directly available: the forward model of Section~\ref{sec:lya-theory} relates the observation $\bm y$ to the \emph{clean} field $\bm x_0$, not to the noisy intermediate $\bm z_t$ that the reverse process operates on at each step. We therefore have no direct handle on $p(\bm y\mid\bm z_t)$.
+
+The exact relationship between the two follows from marginalizing over all clean fields consistent with the current noisy state is:
+\begin{equation}
+p(\bm{y}\mid\bm{z}_t) \;=\; \int p(\bm{y}\mid\bm{x}_0)\;p(\bm{x}_0\mid\bm{z}_t)\;\mathrm{d}\bm{x}_0\,.
+\label{eq:dps_marginalisation}
+\end{equation}
+The first factor inside the integral, $p(\bm y\mid\bm x_0)$, is fully specified by the forward operator and the noise model (Eq.~\ref{eq:dps_gaussian_likelihood} below). The second factor, $p(\bm x_0\mid\bm z_t)$, is the posterior distribution over clean fields given the noisy intermediate. This is intractable in general because it depends on the full data distribution learned by the score network.
+
+DPS works around this by approximating the posterior as a delta function centered on its conditional mean,
+\begin{equation}
+p(\bm{x}_0\mid\bm{z}_t) \;\approx\; \delta\!\Big(\bm{x}_0 - \hat{\bm{x}}_0(\bm{z}_t)\Big),
+\label{eq:dps_delta_approx}
+\end{equation}
+where $\hat{\bm x}_0(\bm z_t) \approx \mathbb{E}[\bm x_0\mid\bm z_t]$ is obtained from the Tweedie identity already introduced in Chapter~\ref{ch:lodi} (Eq.~\ref{eq:tweedie}),
+\begin{equation}
+\hat{\bm{x}}_0(\bm{z}_t) \;=\; \frac{\bm{z}_t - \sigma_t\,\hat{\bm\epsilon}_{\bm\theta}(\bm{z}_t,t)}{\alpha_t}\,.
+\label{eq:dps_tweedie}
+\end{equation}
+Substituting the delta-function approximation of Eq.~\ref{eq:dps_delta_approx} into the marginalization integral of Eq.~\ref{eq:dps_marginalisation} collapses it to a single evaluation at the Tweedie estimate,
+\begin{equation}
+p(\bm{y}\mid\bm{z}_t) \;\approx\; p\!\big(\bm{y}\mid\hat{\bm{x}}_0(\bm{z}_t)\big).
+\label{eq:dps_likelihood_approx}
+\end{equation}
+Crucially, the right-hand side remains a function of $\bm z_t$ through the deterministic map $\bm z_t\mapsto\hat{\bm x}_0(\bm z_t)$, so the approximation preserves the correct conditioning variable. The quality of this approximation is controlled by the width of $p(\bm x_0\mid\bm z_t)$. At early diffusion times (large $t$) the posterior is broad and the delta-function collapse is crude, whereas at late times (small $t$) the noisy state is already close to the clean field and $\hat{\bm x}_0\approx\bm x_0$, making the approximation increasingly tight. 
+
+Modeling the observational noise on the flux as Gaussian with variance $\sigma_y^2$, set by the survey's spectral signal-to-noise ratio, gives an explicit, differentiable form for this approximate likelihood,
+\begin{equation}
+p\!\big(\bm{y}\mid\hat{\bm{x}}_0(\bm{z}_t)\big) \;\propto\; \exp\!\left(-\frac{1}{2\sigma_y^2}\left\lVert\bm{y}-\mathcal{A}\!\big(\hat{\bm{x}}_0(\bm{z}_t)\big)\right\rVert^2\right),
+\label{eq:dps_gaussian_likelihood}
+\end{equation}
+where $\mathcal{A}(\cdot)$ denotes the full forward operator of Section~\ref{sec:lya-theory}: extracting the four gas-phase channels $(\gasLOS,\HILOS,T,\vpec)$ from the joint field estimate (recall that $\dmLOS$ never enters $\mathcal{A}$ directly; Section~\ref{sec:lya-physics}), evaluating the discretised optical depth of Eq.~\ref{eq:tau-sum}, and converting to transmitted flux via $F=e^{-\tau}$.
+\subsection{The guidance gradient and sampling algorithm}
+\label{sec:dps_algorithm}
+
+Combining Eqs.~\ref{eq:dps_likelihood_approx},\ref{eq:dps_gaussian_likelihood}, the guidance term of Eq.~\ref{eq:dps_score_decomposition} becomes
+\begin{equation}
+\nabla_{\bm{z}_t}\log p(\bm{y}\mid\bm{z}_t) \;\approx\; -\zeta_t\,\nabla_{\bm{z}_t}\left\lVert\bm{y}-\mathcal{A}\big(\hat{\bm{x}}_0(\bm{z}_t)\big)\right\rVert^2,
+\label{eq:dps_guidance}
+\end{equation}
+where the gradient is taken with respect to $\bm{z}_t$ by backpropagating through both the Tweedie estimate $\hat{\bm x}_0(\bm z_t)$ (i.e.\ through the denoising network itself) and the differentiable forward model $\mathcal{A}$ (Section~\ref{sec:tau-discretized} was built explicitly to make this possible). Following \citet{chung_diffusion_2023}, we absorb $1/\sigma_y^2$ and the normalization of the Tweedie estimate into a single scalar \emph{guidance strength} $\zeta_t$, tuned and scheduled empirically rather than fixed analytically, the Gaussian-likelihood derivation above is exact only in the $t\to0$ limit, and $\zeta_t$ in practice compensates for the approximation error at earlier, noisier steps. Four our work, $\zeta_t$ follows a schedule given by:
+
+\begin{equation}
+\zeta_t = \zeta.\frac{1-\cos\left(\pi(1-t)\right)}{2}.
+\label{eq:zeta_schedule}
+\end{equation}
+This ensures that when $t\rightarrow1$, $\zeta_t $ is close to zero, since the estimate of $\hat{\bm{x}}_0(\bm{z}_t)$ is very noisy and we do not want it to push the guidance in the wrong direction, hence the weak guidance strength. On the other hand, for $t\rightarrow0$, $\zeta_t$ reaches the maximum value of $\zeta$, which for this work is $\zeta=10$. It was chosen by emperical testing. Too high of a guidance strength pushes the diffusion model out of its learned prior region and causes the outputs to become unphysical (deviate from the prior correlation structure). A weak guidance, on the other hand, does not get guided enough by the observation $\bm{y}$, and produces outputs that weakly correlate with it.
+Each reverse step then combines the ordinary unconditional update of Eq.~\ref{eq:reverse_step} with this additional gradient, pulling the reverse process, at every step, towards states consistent with both the learned prior and the observed flux:
+\begin{equation}
+\bm{z}_{t-1} = \big[\text{unconditional reverse step, Eq.~\ref{eq:reverse_step}}\big] \;-\; \zeta_t\,\nabla_{\bm{z}_t}\left\lVert\bm{y}-\mathcal{A}\big(\hat{\bm{x}}_0(\bm{z}_t)\big)\right\rVert^2.
+\label{eq:dps_reverse_step}
+\end{equation}
+
+\begin{algorithm}[h!]
+\caption{Diffusion posterior sampling for joint five-field reconstruction}
+\label{alg:dps}
+\begin{algorithmic}[1]
+\State $\bm{z}_T \sim \mathcal{N}(\mathbf{0},\mathbf{I})$
+\For{$t = T,\dots,1$}
+    \State $\hat{\bm{x}}_0(\bm{z}_t) \gets \big(\bm{z}_t - \sigma_t\,\hat{\bm\epsilon}_{\bm\theta}(\bm{z}_t,t)\big)/\alpha_t$ \Comment{Tweedie estimate, Eq.~\ref{eq:dps_tweedie}}
+    \State $\bm{z}_{t-1}' \gets$ unconditional reverse step from $\bm{z}_t$ \Comment{Eq.~\ref{eq:reverse_step}}
+    \State $g \gets \nabla_{\bm{z}_t}\left\lVert\bm{y}-\mathcal{A}\big(\hat{\bm{x}}_0(\bm{z}_t)\big)\right\rVert^2$ \Comment{backprop through network \emph{and} forward model}
+    \State $\bm{z}_{t-1} \gets \bm{z}_{t-1}' - \zeta_t\, g$ \Comment{Eq.~\ref{eq:dps_reverse_step}}
+\EndFor
+\State \textbf{return} $\bm{z}_0$ \Comment{one posterior sample of the joint five-field state}
+\end{algorithmic}
+\end{algorithm}
+
+
 
 \section{Results}
-Show the reconstruction of the 5 underlying LOS quantities that determine the Lyalpha flux. Both for 1d and 3D.
+\label{sec:dps_results}
+To showcase the preliminary results, we showcase the reconstruction of the baryonic and dark matter fields, after having observed only 1 set of Lyman alpha flux. We test a couple of different scenarios:
+\begin{itemize}
+\item We vary the observed sightline sampling density.
+\item We vary the signal-to-noise ratio (SNR) of the flux observations.
+\end{itemize}
+Note that, as mentioned, we do not need to retrain our model to perform these various tests, since the observed flux never enters the training pipeline. Since these are incomplete results, we only show the outputs for a subvolume of the full simulation of shape $40\Mpch\times10\Mpch\times10\Mpch$.
+
+For each combination, we generate 10 posterior samples of shape 
+$(5,1024,32,32)$, matching our training data resolution and spanning a single chunk of the full simulation volume.
+
+Our analysis proceeds in two stages. First, we perform 1D Gaussian smoothing along the line of sight only, isolating the quality of individual sightline reconstructions without transverse mixing. This reveals how well the DPS recovers velocity structure and density perturbations on individual sight lines. Second, we apply full 3D smoothing to mix information across transverse neighbors, examining whether the large-scale 3D structure and correlations are faithfully reconstructed.
+
+\textbf{Noise model:} We add a simple, flux-dependent noise to the synthetic observations. Rather than assuming constant noise, we adopt a spatially-varying noise model where the noise standard deviation at each pixel is inversely proportional to the local flux,
+\begin{equation}
+\label{eq:SNR}
+\sigma_{\text{noise}}(\mathbf{r}) = \frac{F(\mathbf{r})}{\text{SNR}},
+\end{equation}
+with a minimum floor of $\sigma_{\min} = 10^{-4}$ to avoid numerical issues in deep absorption features. This ensures that absorption troughs and high-transmission regions have comparable effective SNR, rather than a constant noise everywhere.
+\subsection{1D LOS}
+For the first test, we study the average 1D flux power spectra along with the smoothed reconstructed line of sight based on a single set of observed flux, with varying noise and sight line density. We also show the learned Pearson and Spearmann correlation coefficients for the fields.
+
+\section{Discussion}
+\label{sec:dps_discussion}
+

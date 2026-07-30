@@ -1,4 +1,185 @@
+% \chapter{Posterior Predictive Fields under Planck Cosmology}
+
+% \section{Introduction}
+% \label{sec:intro_posterior}
+
+% The relationship between the dark matter density field and the observable
+% baryonic tracers such as galaxies, stars, or diffuse gas is fundamentally
+% uncertain, shaped by astrophysical processes (supernova and AGN feedback,
+% star formation) that are only approximately captured by sub-grid models
+% in modern hydrodynamical simulations~\citep{villaescusa-navarro_camels_2022}.
+% Recovering the underlying dark matter distribution from these biased tracers
+% is therefore an inverse problem: for a given observed stellar or galaxy field, many plausible dark matter configurations are consistent with the data, and the astrophysical parameters governing the tracer to matter connection are themselves unknown. A principled solution requires sampling from a full posterior distribution over dark matter field configurations, rather than producing a single point estimate.
+
+% \paragraph{Field-level inference in cosmology.}
+% Traditional cosmological inference compresses the 3D density field into low-order summary statistics such as the power spectrum or bispectrum before comparing to theoretical predictions. While tractable, this compression
+% discards a substantial fraction of the cosmological information encoded in the non-Gaussian, non-linear regime of structure formation~\citep{leclercq_accuracy_2021,jasche_bayesian_2013}. \emph{Field-level inference} instead aims to extract information directly at the level of the 3D field
+% itself. Early approaches to this problem relied on explicit forward models of gravitational dynamics coupled with Hamiltonian Monte Carlo or related samplers to explore the resulting high-dimensional posterior~\citep{jasche_bayesian_2013}, with more recent extensions targeting efficient sampling at scale~\citep{bayer_field-level_2023}, robustness to model misspecification~\citep{shao_robust_2022}, and joint constraints on primordial non-Gaussianity~\citep{andrews_bayesian_2023}. These methods are powerful but computationally demanding, as each posterior draw typically requires an expensive forward simulation or gradient evaluation through a differentiable simulator.
+
+
+% \paragraph{Learned priors and generative field-level inference.}
+% An alternative route is to learn a prior or a full conditional
+% posterior directly from a suite of simulations using deep generative models, avoiding the need to evaluate a physical forward model at inference time. Early machine learning approaches to the dark-matter galaxy connection used neural networks to learn point estimates of this
+% mapping~\citep{modi_cosmological_2018}. More recently, diffusion-based generative models have been used to go beyond point estimates and directly sample the posterior distribution of dark matter fields conditioned on biased tracers. Closely related to the present work, \citet{ono_debiasing_2024} trained a diffusion model on the CAMELS suite to sample dark matter density fields conditioned on stellar mass fields, explicitly marginalizing over the uncertain cosmological and astrophysical parameters of the simulation suite. Diffusion priors have also been
+% successfully deployed as posterior samplers for weak-lensing mass mapping in three dimensions~\citep{zhao_generative_2026}, following the general framework of diffusion posterior sampling for inverse problems~\citep{chung_diffusion_2023} that we present in this thesis (Chapter~\ref{ch:dps}).
+
+
+% \paragraph{This work.}
+% In this chapter, we extend the \FOLD architecture introduced in
+% Chapter~\ref{ch:cosmofold} to the problem of field-level posterior sampling. Rather than using the variational diffusion model purely as a generator, we use the same conditional architecture to draw samples from the approximate
+% posterior $p_\phi(\rhoDM \mid \Star,
+% \Omega_m, \sigma_8)$, trained on the CAMELS Multifield
+% Dataset~\citep{villaescusa-navarro_camels_2022} Latin-hypercube suite so that the model implicitly marginalizes over the astrophysical feedback parameters at training time. Building on this, we introduce a scheme to incorporate external observational constraints on cosmology specifically, a Planck-derived
+% posterior on $\Omega_m$ and $\sigma_8$ directly into the generative sampling procedure via Bayes' theorem, allowing the resulting dark matter posterior samples to be consistent with both the observed tracer field and external cosmological data. We validate the resulting posterior samples at the voxel level and discuss the implications for reconstructing the dark matter distribution from observational tracers.
+
+% \section{Datasets and methodology}
+% As mentioned above, for this proof of concept work, we modify our \LODI architecture framework while incorporating the \FOLD technique. In this section I discuss the both the dataset used and also the new methodology implemented.
+% \subsection{CAMELS Multifield Dataset}
+% The CAMELS Multifield Dataset(CMD) is a collection of preprocessed 2D maps and 3D grids, containing many different properties of gas, dark matter, and stars from 2,000 distinct simulated universes at several cosmic times. These simulations contain both gravity only N-body simulation suite using GADGET-3, as well as several magnetohydrodynamical simulation suites; the IllustrisTNG CMD suites were produced using the AREPO code to solve the same sub-grid physics models as the original IllustrisTNG simulations. This is the one that we use for our following work.
+% Especially, we work with the Latin Hypercube(LH) subset of the CMD. They contatin 1,000 simulations sampling a six-dimensional parameter space with a Latin hypercube design, ensuring efficient, space-filling coverage without the combinatorial cost of a full grid. The parameters varied are:
+
+% \begin{table}
+%     \centering
+%     \caption{Cosmological and astrophysical parameters varied in the CAMELS Latin Hypercube (LH) set. The fiducial values ($\Omega_m = 0.3$, $\sigma_8 = 0.8$, $A_i = 1$ for all astrophysical parameters) correspond to the original IllustrisTNG calibration and sit at the center of the
+%     sampled range.}
+%     \label{tab:lh_params}
+%     \begin{tabular}{l c c l}
+%         \hline
+%         \textbf{Parameter} & \textbf{Range} & \textbf{Sampling} & \textbf{Physical meaning} \\
+%         \hline
+%         $\Omega_m$          & $[0.1,\, 0.5]$   & linear      & Present-day matter density parameter \\
+%         $\sigma_8$          & $[0.6,\, 1.0]$   & linear      & Amplitude of linear fluctuations at $8\,h^{-1}\,\mathrm{Mpc}$ \\
+%         $A_{\mathrm{SN1}}$  & $[0.25,\, 4.0]$  & logarithmic & Norm of galactic wind energy (SN feedback) \\
+%         $A_{\mathrm{SN2}}$  & $[0.5,\, 2.0]$   & logarithmic & Norm of galactic wind speed (SN feedback) \\
+%         $A_{\mathrm{AGN1}}$ & $[0.25,\, 4.0]$  & logarithmic & Norm of AGN feedback energy \\
+%         $A_{\mathrm{AGN2}}$ & $[0.5,\, 2.0]$   & logarithmic & Norm of AGN feedback burstiness \\
+%         \hline
+%     \end{tabular}
+% \end{table}
+
+
+
+% \section{Network modifications for training}
+% We use 700 simulations from the CMD set of Latin Hypercube (LH) to train and validate, and the remaining 300 to test the results on. Each simulation field of $128^3$ voxels is chunked into $64^3$ voxels. A total of 24 different flips and rotations are applied to the data and augmented as well. In the end this gives us a total of $134{,}400$ data points, out of which $75\%$ is used for training and $25\%$ for validating.
+
+% \vspace{\baselineskip}
+
+% To get around the problem of cosmic variance that comes from the random initial condition used to generate the cosmic initial density field, we modify the previously mentioned \FOLD by conditioning the generative model on the large scale modes of the simulation field. This is done by taking the full $128^3$ voxels, $25^3(\Mpch)^3$ volume, and then average via pooling $4\times 4\times 4$ voxels into a new voxel, to get a resulting coarse grained downsampled $16^3$ voxels field $\LowStar$. This field is then concatenated via convolutional layers to the denoising Unet of the diffusion model of \FOLD. Note that this means that there is a unique $\LowStar$ field corresponding to all the $24\times8$ sub training chunks coming from each $128^3$ $\Star$ field. In the end, the \FOLD is conditioned on $\{\LowStar,\Star,\Omega_m,\sigma_8\}$, to produce $\rhoDM$ fields. Note that from now in this work, whenever we condition on $\Star$, we are jointly conditioning over $\{\LowStar, \Star\}$. The criteria for saving the checkpoint stays the same as the previous work of \FOLD. We save those weights for which the ELBO (Evidence Lower Bound) of the data is maximized, similar to the case of our \FOLD work.
+
+% \subsection{Conditioning mechanism}
+% \label{sec:cond_mechanism}
+
+% All three sources of global conditioning information, the diffusion time-step, the cosmological parameters, and the large-scale context field, are injected into the denoising network through a single, shared \emph{additive} conditioning vector, rather than through separate pathways. This conditioning vector is constructed as follows.
+
+% The time-step embedding $\et$ is first passed through a small MLP to obtain a time-conditioning vector,
+% \begin{equation}
+%     \bm{c}_t = \mathrm{MLP}_t(\bm{e}_t) \in \mathbb{R}^{4d},
+%     \label{eq:time_cond}
+% \end{equation}
+% where $d$ is the base embedding dimension of the network(for our work $d=64$. This has already existed in the previous implementations of \FOLD and \LODI. As a new modification, the cosmological parameters $\bm{\theta}_c = \{\Omega_m,\sigma_8\}$ are separately embedded through a two-layer MLP,
+% \begin{equation}
+%     \bm{c}_{\theta} = W_2\,\mathrm{SiLU}\!\left(W_1\,\bm{\theta}_c\right) \in \mathbb{R}^{4d},
+%     \label{eq:cosmo_embed}
+% \end{equation}
+% where $W_1 \in \mathbb{R}^{4d\times 2}$ and $W_2 \in \mathbb{R}^{4d\times 4d}$ are learnable weight matrices. The large-scale context field $\LowStar \in \mathbb{R}^{1\times16\times16\times16}$ is encoded by two- 3 dimensional convolutional layers followed by global average pooling over the spatial dimensions,
+% \begin{equation}
+%     \bm{c}_{\mathrm{ctx}} = W_{\mathrm{ctx}} \left\langle \mathrm{Conv3D}\big(\mathrm{SiLU}(\mathrm{Conv3D}(\LowStar))\big) \right\rangle_{xyz} \in \mathbb{R}^{4d},
+%     \label{eq:ctx_embed}
+% \end{equation}
+% where $\langle \cdot \rangle_{xyz}$ denotes averaging over the three spatial axes and $W_{\mathrm{ctx}}$ is a learnable, zero-initialized linear projection.
+
+% The three embeddings are then combined by simple addition into a single conditioning vector,
+% \begin{equation}
+%     \bm{c} = \bm{c}_t + \bm{c}_{\theta} + \bm{c}_{\mathrm{ctx}} \in \mathbb{R}^{4d},
+%     \label{eq:combined_cond}
+% \end{equation}
+% which is passed identically to every residual block of the U-Net (Sec.~\ref{sec:denoise_arch}), where it is projected to the appropriate channel dimension and injected additively, as illustrated in Fig.~\ref{fig:resnet_block}. Because the cosmological embedding $\bm{c}_\theta$ enters through the same additive pathway as the time-step and context embeddings, at inference time $\Omega_m$ and $\sigma_8$ can be freely varied per sample without retraining, which is what enables the Monte Carlo marginalization over the Planck posterior described in Sec.~\ref{sec:field_pos_samp}.
+
+% The zero-initialization of $W_{\mathrm{ctx}}$ (and of the final convolution in every residual block, Sec.~\ref{sec:denoise_arch}) ensures that at the start of training, the additional context and cosmology conditioning pathways contribute no signal, so the network initially behaves as an unconditional (or minimally conditioned) denoiser and gradually learns to make use of the extra conditioning information as training progresses.
+
+
+
+% \section{Sampling from dark matter posterior field}
+% \label{sec:field_pos_samp}
+% After training our diffusion model, we can draw samples from the learned approximate posterior distribution $p_{\NNpars}(\rhoDM|\Star,\Omega_m,\sigma_8)$, because in our training, the model learns to implicitly marginalize over the astrophysical parameters:
+%  \begin{equation}
+%      p_{\NNpars} (\rhoDM|\Star,\Omega_m,\sigma_8)\approx\int p_{\NNpars}(\rhoDM|\Star,\Omega_m,\sigma_8,\bm{\theta_a})p(\bm{\theta_a})d\bm{\theta_a}
+%  \end{equation}
+% where $\bm{\theta_a}$ are the astrophysical parameters and $p(\bm{\theta_a})$ is the training prior over the astrophysics parameters. In our LH set, we have a uniform prior over the linearly or log sampled $\bm{\theta_a}$ space, which can be seen in table~\ref{tab:lh_params}. We note that this marginalization is only exact in the limit of a perfectly trained network; in practice, the above expression is an approximation whose accuracy depends on how well the network captures the conditional distribution across the full training range of $\bm{\theta}_a$. We also note that we are implicitly treating the training distribution over $\bm{\theta}_a$ as a proxy for the true prior over astrophysical feedback strength, an assumption we make on the CAMELS LH set. 
+
+% Now, to sample the conditional posterior $p(\rhoDM|\Star)$, conditioned on an unseen $\Star$, while incorporating external known cosmological constraints, we take help from Bayes' theorem. Whereas the expression above treats $\Omega_m$ and $\sigma_8$ as fixed, known inputs, we now consider the case where these cosmological parameters are themselves uncertain, constrained only through external data $\mathcal{D}_{\text{planck}}$:
+%  \begin{equation}
+%      p_{\NNpars} (\rhoDM|\Star,\mathcal{D_\text{planck}}) = \int p_{\NNpars} (\rhoDM|\Star,\bm{\theta_c})p(\bm{\theta_c}|\mathcal{D_\text{planck}})d\bm{\theta_c}
+%  \end{equation}
+ 
+% where we use the data driven posterior $p(\bm{\theta_c}|\mathcal{D_\text{planck}})$ from Planck observations to act as a prior that we sample from, to marginalize over the possible realizations of $\bm{\theta_c}$, where $\bm{\theta_c}=\{\Omega_m, \sigma_8\}$. Specifically, we use the \texttt{base\_plikHM\_TTTEEE\_lowl\_lowE\_lensing} 
+% MCMC chain from the Planck Legacy Archive, corresponding to the baseline 
+% $\Lambda$CDM model constrained with the full \textit{Planck} temperature, 
+% polarization (TT,TE,EE), low-$\ell$ likelihood, and CMB lensing 
+% data~\citep{planck_collaboration_planck_2020}. This two-step approach is computationally advantageous: rather than retraining the network whenever external cosmological constraints are updated, we reuse a single model trained on the full LH parameter range and reweight at inference time via the expression above, analogous to a Bayesian update on a fixed likelihood.
+
+% We approximate this integral via Monte Carlo sampling. Cosmological parameters $\bm{\theta}_c^i$ are drawn from the Planck MCMC chain and for each $\bm{\theta}_c^i$ we generate a $\rhoDM$ field:
+% \begin{equation}\label{Eq:samplig}
+% \begin{aligned}
+%     \bm{\theta}_c^i \sim p(\bm{\theta}_c \mid \mathcal{D}_{\mathrm{Planck}}) \\
+%     \rhoDM^i \sim p_{\NNpars}(\rhoDM \mid \Star, \bm{\theta}_c^i)
+% \end{aligned}
+% \end{equation}
+% This yields a set of samples that approximate the posterior distribution of dark matter fields at the field level. We then compute voxel wise posterior statistics, including mean and variance, and estimate marginal distributions using histograms across samples. For our work, we use 1000 generated posterior samples for the same conditional stellar field. We note that the $\Star$ used at inference, corresponds to underlying cosmological parameters that lie within the support of the Planck posterior, so that all generated samples remain within the domain of validity of the prior.
+
+
+% \section{Results}
+% \label{sec:results}
+
+% In this section, we present the results of our method, to show that we can sample high dimensional field level posteriors, given data constraints and conditioned on baryonic observables, which in this case is $\Star$. In figure~\ref{fig:3d_posterior}, we showcase generated 3 dimensional simulation cubes. We use a previously unseen $\Star$ which, along with the global context $\LowStar$ and sampled $\bm{\theta_c}^i$, to generate $\rhoDM^i$(see Eq:~\ref{Eq:samplig}). One approximate sampled posterior map $p_{\NNpars}(\rhoDM \mid \Star, \bm{\theta_c})$ is shown on the top right side of the plot. For reference, the ground truth dark matter field is shown on the top plot of the middle row. After we repeatedly sample via Eq~\ref{Eq:samplig}, we obtain the posterior distribution of voxels, from which we plot the posterior mean in the bottom of the middle row and the standard deviation in the bottom right. As can be seen, the posterior mean washes out the small scale variability at the voxel level and the local filaments, but preserves the large scale filamentary structures, while the standard deviation field is more noisy and captures the voxel wise variability. All the plots take the sparse stellar field, shown on the left, as a conditional.
+% \begin{figure*}[h!]
+%     \centering
+%     \includegraphics[width=1.0\linewidth]{chapters/Field_posterior/Fig_cube.png}
+%     \caption{Depiction of the sampled field level dark matter posterior for an unseen test simulation. The conditioning stellar field is shown on the left side of the plot while the corresponding ground truth dark matter field is shown on the top of the middle row. A generated dark matter field with our diffusion model is shown on the top right, while the average and standard deviation of 1000 such samples is depicted in the lower plot of the middle and right row respectively. }
+%     \label{fig:3d_posterior}
+% \end{figure*}
+
+% To visualize single voxel posteriors, in Fig.~\ref{fig:voxel_hist} we plot sampled posterior distribution for 3 voxels of different density, along with the ground truth values. We see that the predicted posterior mass sits well with the ground truth voxel density values.
+% To better quantify the quality of the generated posteriors, we also plot standard residual $\sigma_\mathrm{res}$ per voxel as a histogram, where $\sigma_\mathrm{res}$ corresponds to:
+
+% \begin{equation}\label{eq:residual}
+%     \sigma_\mathrm{res}^i = \frac{|\overline{\mathrm{DM}}_\mathrm{pred}^i-\mathrm{DM}_\mathrm{true}^i|}{\sigma_\mathrm{pred}^i},
+% \end{equation}
+% where $\overline{\mathrm{DM}}_\mathrm{pred}^i$ is the predicted posterior mean for a voxel $i$ and the $\mathrm{DM}_\mathrm{true}^i$ is the ground truth value for the same. Meanwhile $\sigma_\mathrm{pred}^i$ is the standard deviation of the predicted posterior of that voxel. We plot $\sigma_\mathrm{res}$ for two distinct cases in Fig.~\ref{fig:summary}, where the orange case is for underdense dark matter regions while the blue is for the overdense regions.
+% \begin{figure*}[h!]
+%     \centering
+%     \includegraphics[width=1.0\linewidth]{chapters/Field_posterior/posterior_hist.pdf}
+%     \caption{Posterior residual histograms(see Eq.~\ref{eq:residual}) for under dense (orange) and over dense(blue) voxels, plotted for an aggregate of 1000 generated dark matter samples.}
+%     \label{fig:summary}
+% \end{figure*}
+
+% \begin{figure*}[h!]
+%     \centering
+%     \includegraphics[width=1\linewidth]{chapters/Field_posterior/posterior_multihist.pdf}
+%     \caption{Sampled posterior with 1000 sampled points, generated via the diffusion model, for 3 different voxels. For each posterior, the ground truth value is shown as a vertical dashed red line.}
+%     \label{fig:voxel_hist}
+% \end{figure*}
+
+
+
+% \section{Discussion}
+% \
+% \label{sec:discussion}
+
+% In this chapter, we have demonstrated that a conditional variational diffusion model, trained on the CAMELS Latin Hypercube suite, can be used to sample field-level posterior distributions of the dark matter density given an observed stellar mass field. Rather than producing a single point estimate of the underlying dark matter distribution, our approach yields a full ensemble of plausible three-dimensional realizations, from which we can extract voxel-wise posterior statistics such as the mean and standard deviation, as shown in Fig.~\ref{fig:3d_posterior}. This is one of the first demonstrations of field-level posterior sampling for the dark matter stellar connection using a variational diffusion model conditioned jointly on a local tracer field, its large-scale context, and external cosmological information.
+
+% A key feature of our approach is that the astrophysical uncertainty inherent in the stellar to dark matter mapping that are only approximately captured by sub grid models is handled implicitly, by training across the full range of astrophysical parameters sampled by the CAMELS LH set. This allows the network to learn a distribution over plausible dark matter fields for a given stellar field, rather than assuming a single, fixed astrophysical model. At the same time, cosmological parameters are treated differently: rather than marginalizing over them at training time, we retain the ability to condition on them explicitly, which allows us to inject external observational constraints specifically, the Planck 2018 posterior on $\Omega_m$ and $\sigma_8$ -- directly into the sampling procedure via Bayes' theorem (Sec.~\ref{sec:field_pos_samp}). 
+% This illustrates how a single trained generative model can be reused across different external priors without retraining.
+
+% The voxel-level diagnostics presented in Sec.~\ref{sec:results} -- the single-voxel posterior distributions (Fig.~\ref{fig:voxel_hist}) and the residual histograms split by density regime (Fig.~\ref{fig:summary}) indicate that the predicted posterior mass is generally consistent with the ground truth dark matter values, in both underdense and overdense regions. We also observe, qualitatively, that the posterior mean field preserves large-scale filamentary structure while smoothing over small-scale, voxel-level variability; this is an expected consequence of averaging over a stochastic mapping in which many small-scale configurations are equally consistent with a given large-scale and stellar-field context, and is not indicative of a failure of the underlying model.
+
+% We stress that the results presented here are based on a single test field, and should be regarded as a first, encouraging demonstration of the method rather than a comprehensive validation. A more thorough assessment of the calibration and clustering statistics of the generated posteriors including coverage tests, power spectra, and higher-order statistics is left for future work.
+
+
+
+
 \chapter{Posterior Predictive Fields under Planck Cosmology}
+\label{ch:field_pos}
 
 \section{Introduction}
 \label{sec:intro_posterior}
@@ -32,11 +213,11 @@ posterior $p_\phi(\rhoDM \mid \Star,
 Dataset~\citep{villaescusa-navarro_camels_2022} Latin-hypercube suite so that the model implicitly marginalizes over the astrophysical feedback parameters at training time. Building on this, we introduce a scheme to incorporate external observational constraints on cosmology specifically, a Planck-derived
 posterior on $\Omega_m$ and $\sigma_8$ directly into the generative sampling procedure via Bayes' theorem, allowing the resulting dark matter posterior samples to be consistent with both the observed tracer field and external cosmological data. We validate the resulting posterior samples at the voxel level and discuss the implications for reconstructing the dark matter distribution from observational tracers.
 
-\section{Datasets and methodology}
-As mentioned above, for this proof of concept work, we modify our \LODI architecture framework while incorporating the \FOLD technique. In this section I discuss the both the dataset used and also the new methodology implemented.
+\section{Methodology}
+In this section, we discuss both the dataset used and the methodology implemented.
 \subsection{CAMELS Multifield Dataset}
 The CAMELS Multifield Dataset(CMD) is a collection of preprocessed 2D maps and 3D grids, containing many different properties of gas, dark matter, and stars from 2,000 distinct simulated universes at several cosmic times. These simulations contain both gravity only N-body simulation suite using GADGET-3, as well as several magnetohydrodynamical simulation suites; the IllustrisTNG CMD suites were produced using the AREPO code to solve the same sub-grid physics models as the original IllustrisTNG simulations. This is the one that we use for our following work.
-Especially, we work with the Latin Hypercube(LH) subset of the CMD. They contatin 1,000 simulations sampling a six-dimensional parameter space with a Latin hypercube design, ensuring efficient, space-filling coverage without the combinatorial cost of a full grid. The parameters varied are:
+Specifically, we work with the Latin Hypercube (LH) subset of the CMD. They contain 1,000 simulations sampling a six-dimensional parameter space with a Latin hypercube design, ensuring efficient, space-filling coverage without the combinatorial cost of a full grid. The parameters varied are:
 
 \begin{table}
     \centering
@@ -57,16 +238,13 @@ Especially, we work with the Latin Hypercube(LH) subset of the CMD. They contati
     \end{tabular}
 \end{table}
 
-
-
-\section{Network modifications for training}
+\subsection{Training and validation split}
 We use 700 simulations from the CMD set of Latin Hypercube (LH) to train and validate, and the remaining 300 to test the results on. Each simulation field of $128^3$ voxels is chunked into $64^3$ voxels. A total of 24 different flips and rotations are applied to the data and augmented as well. In the end this gives us a total of $134{,}400$ data points, out of which $75\%$ is used for training and $25\%$ for validating.
 
-\vspace{\baselineskip}
-
+\subsection{Network modifications for training}
 To get around the problem of cosmic variance that comes from the random initial condition used to generate the cosmic initial density field, we modify the previously mentioned \FOLD by conditioning the generative model on the large scale modes of the simulation field. This is done by taking the full $128^3$ voxels, $25^3(\Mpch)^3$ volume, and then average via pooling $4\times 4\times 4$ voxels into a new voxel, to get a resulting coarse grained downsampled $16^3$ voxels field $\LowStar$. This field is then concatenated via convolutional layers to the denoising Unet of the diffusion model of \FOLD. Note that this means that there is a unique $\LowStar$ field corresponding to all the $24\times8$ sub training chunks coming from each $128^3$ $\Star$ field. In the end, the \FOLD is conditioned on $\{\LowStar,\Star,\Omega_m,\sigma_8\}$, to produce $\rhoDM$ fields. Note that from now in this work, whenever we condition on $\Star$, we are jointly conditioning over $\{\LowStar, \Star\}$. The criteria for saving the checkpoint stays the same as the previous work of \FOLD. We save those weights for which the ELBO (Evidence Lower Bound) of the data is maximized, similar to the case of our \FOLD work.
 
-\subsection{Conditioning mechanism}
+\subsubsection{Conditioning mechanism}
 \label{sec:cond_mechanism}
 
 All three sources of global conditioning information, the diffusion time-step, the cosmological parameters, and the large-scale context field, are injected into the denoising network through a single, shared \emph{additive} conditioning vector, rather than through separate pathways. This conditioning vector is constructed as follows.
@@ -76,12 +254,12 @@ The time-step embedding $\et$ is first passed through a small MLP to obtain a ti
     \bm{c}_t = \mathrm{MLP}_t(\bm{e}_t) \in \mathbb{R}^{4d},
     \label{eq:time_cond}
 \end{equation}
-where $d$ is the base embedding dimension of the network(for our work $d=64$. This has already existed in the previous implementations of \FOLD and \LODI. As a new modification, the cosmological parameters $\bm{\theta}_c = \{\Omega_m,\sigma_8\}$ are separately embedded through a two-layer MLP,
+where $d$ is the base embedding dimension of the network (for our work, $d=64$). This has already existed in the previous implementations of \FOLD and \LODI. As a new modification, the cosmological parameters $\bm{\theta}_c = \{\Omega_m,\sigma_8\}$ are separately embedded through a two-layer MLP,
 \begin{equation}
     \bm{c}_{\theta} = W_2\,\mathrm{SiLU}\!\left(W_1\,\bm{\theta}_c\right) \in \mathbb{R}^{4d},
     \label{eq:cosmo_embed}
 \end{equation}
-where $W_1 \in \mathbb{R}^{4d\times 2}$ and $W_2 \in \mathbb{R}^{4d\times 4d}$ are learnable weight matrices. The large-scale context field $\LowStar \in \mathbb{R}^{1\times16\times16\times16}$ is encoded by two- 3 dimensional convolutional layers followed by global average pooling over the spatial dimensions,
+where $W_1 \in \mathbb{R}^{4d\times 2}$ and $W_2 \in \mathbb{R}^{4d\times 4d}$ are learnable weight matrices. The large-scale context field $\LowStar \in \mathbb{R}^{1\times16\times16\times16}$ is encoded by two 3-dimensional convolutional layers followed by global average pooling over the spatial dimensions,
 \begin{equation}
     \bm{c}_{\mathrm{ctx}} = W_{\mathrm{ctx}} \left\langle \mathrm{Conv3D}\big(\mathrm{SiLU}(\mathrm{Conv3D}(\LowStar))\big) \right\rangle_{xyz} \in \mathbb{R}^{4d},
     \label{eq:ctx_embed}
@@ -98,28 +276,29 @@ which is passed identically to every residual block of the U-Net (Sec.~\ref{sec:
 The zero-initialization of $W_{\mathrm{ctx}}$ (and of the final convolution in every residual block, Sec.~\ref{sec:denoise_arch}) ensures that at the start of training, the additional context and cosmology conditioning pathways contribute no signal, so the network initially behaves as an unconditional (or minimally conditioned) denoiser and gradually learns to make use of the extra conditioning information as training progresses.
 
 
-
 \section{Sampling from dark matter posterior field}
 \label{sec:field_pos_samp}
 After training our diffusion model, we can draw samples from the learned approximate posterior distribution $p_{\NNpars}(\rhoDM|\Star,\Omega_m,\sigma_8)$, because in our training, the model learns to implicitly marginalize over the astrophysical parameters:
  \begin{equation}
      p_{\NNpars} (\rhoDM|\Star,\Omega_m,\sigma_8)\approx\int p_{\NNpars}(\rhoDM|\Star,\Omega_m,\sigma_8,\bm{\theta_a})p(\bm{\theta_a})d\bm{\theta_a}
+     \label{eq:astro_marginal}
  \end{equation}
-where $\bm{\theta_a}$ are the astrophysical parameters and $p(\bm{\theta_a})$ is the training prior over the astrophysics parameters. In our LH set, we have a uniform prior over the linearly or log sampled $\bm{\theta_a}$ space, which can be seen in table~\ref{tab:lh_params}. We note that this marginalization is only exact in the limit of a perfectly trained network; in practice, the above expression is an approximation whose accuracy depends on how well the network captures the conditional distribution across the full training range of $\bm{\theta}_a$. We also note that we are implicitly treating the training distribution over $\bm{\theta}_a$ as a proxy for the true prior over astrophysical feedback strength, an assumption we make on the CAMELS LH set. 
+where $\bm{\theta_a}$ are the astrophysical parameters and $p(\bm{\theta_a})$ is the training prior over the astrophysics parameters. In our LH set, we have a uniform prior over the linearly or log sampled $\bm{\theta_a}$ space, which can be seen in table~\ref{tab:lh_params}. We note that this marginalization is only exact in the limit of a perfectly trained network; in practice, the above expression is an approximation whose accuracy depends on how well the network captures the conditional distribution across the full training range of $\bm{\theta}_a$. We also note that we are implicitly treating the training distribution over $\bm{\theta}_a$ as a proxy for the true prior over astrophysical feedback strength, an assumption we make on the CAMELS LH set.
 
 Now, to sample the conditional posterior $p(\rhoDM|\Star)$, conditioned on an unseen $\Star$, while incorporating external known cosmological constraints, we take help from Bayes' theorem. Whereas the expression above treats $\Omega_m$ and $\sigma_8$ as fixed, known inputs, we now consider the case where these cosmological parameters are themselves uncertain, constrained only through external data $\mathcal{D}_{\text{planck}}$:
  \begin{equation}
      p_{\NNpars} (\rhoDM|\Star,\mathcal{D_\text{planck}}) = \int p_{\NNpars} (\rhoDM|\Star,\bm{\theta_c})p(\bm{\theta_c}|\mathcal{D_\text{planck}})d\bm{\theta_c}
+     \label{eq:planck_marginal}
  \end{equation}
- 
-where we use the data driven posterior $p(\bm{\theta_c}|\mathcal{D_\text{planck}})$ from Planck observations to act as a prior that we sample from, to marginalize over the possible realizations of $\bm{\theta_c}$, where $\bm{\theta_c}=\{\Omega_m, \sigma_8\}$. Specifically, we use the \texttt{base\_plikHM\_TTTEEE\_lowl\_lowE\_lensing} 
-MCMC chain from the Planck Legacy Archive, corresponding to the baseline 
-$\Lambda$CDM model constrained with the full \textit{Planck} temperature, 
-polarization (TT,TE,EE), low-$\ell$ likelihood, and CMB lensing 
+
+where we use the data driven posterior $p(\bm{\theta_c}|\mathcal{D_\text{planck}})$ from Planck observations to act as a prior that we sample from, to marginalize over the possible realizations of $\bm{\theta_c}$, where $\bm{\theta_c}=\{\Omega_m, \sigma_8\}$. Specifically, we use the \texttt{base\_plikHM\_TTTEEE\_lowl\_lowE\_lensing}
+MCMC chain from the Planck Legacy Archive, corresponding to the baseline
+$\Lambda$CDM model constrained with the full \textit{Planck} temperature,
+polarization (TT,TE,EE), low-$\ell$ likelihood, and CMB lensing
 data~\citep{planck_collaboration_planck_2020}. This two-step approach is computationally advantageous: rather than retraining the network whenever external cosmological constraints are updated, we reuse a single model trained on the full LH parameter range and reweight at inference time via the expression above, analogous to a Bayesian update on a fixed likelihood.
 
 We approximate this integral via Monte Carlo sampling. Cosmological parameters $\bm{\theta}_c^i$ are drawn from the Planck MCMC chain and for each $\bm{\theta}_c^i$ we generate a $\rhoDM$ field:
-\begin{equation}\label{Eq:samplig}
+\begin{equation}\label{eq:sampling}
 \begin{aligned}
     \bm{\theta}_c^i \sim p(\bm{\theta}_c \mid \mathcal{D}_{\mathrm{Planck}}) \\
     \rhoDM^i \sim p_{\NNpars}(\rhoDM \mid \Star, \bm{\theta}_c^i)
@@ -131,7 +310,7 @@ This yields a set of samples that approximate the posterior distribution of dark
 \section{Results}
 \label{sec:results}
 
-In this section, we present the results of our method, to show that we can sample high dimensional field level posteriors, given data constraints and conditioned on baryonic observables, which in this case is $\Star$. In figure~\ref{fig:3d_posterior}, we showcase generated 3 dimensional simulation cubes. We use a previously unseen $\Star$ which, along with the global context $\LowStar$ and sampled $\bm{\theta_c}^i$, to generate $\rhoDM^i$(see Eq:~\ref{Eq:samplig}). One approximate sampled posterior map $p_{\NNpars}(\rhoDM \mid \Star, \bm{\theta_c})$ is shown on the top right side of the plot. For reference, the ground truth dark matter field is shown on the top plot of the middle row. After we repeatedly sample via Eq~\ref{Eq:samplig}, we obtain the posterior distribution of voxels, from which we plot the posterior mean in the bottom of the middle row and the standard deviation in the bottom right. As can be seen, the posterior mean washes out the small scale variability at the voxel level and the local filaments, but preserves the large scale filamentary structures, while the standard deviation field is more noisy and captures the voxel wise variability. All the plots take the sparse stellar field, shown on the left, as a conditional.
+In this section, we present the results of our method, to show that we can sample high dimensional field level posteriors, given data constraints and conditioned on baryonic observables, which in this case is $\Star$. In figure~\ref{fig:3d_posterior}, we showcase generated 3 dimensional simulation cubes. We use a previously unseen $\Star$, along with the global context $\LowStar$ and sampled $\bm{\theta}_c^i$, to generate $\rhoDM^i$ (see Eq:~\ref{eq:sampling}). One approximate sampled posterior map $p_{\NNpars}(\rhoDM \mid \Star, \bm{\theta_c})$ is shown on the top right side of the plot. For reference, the ground truth dark matter field is shown on the top plot of the middle row. After we repeatedly sample via Eq~\ref{eq:sampling}, we obtain the posterior distribution of voxels, from which we plot the posterior mean in the bottom of the middle row and the standard deviation in the bottom right. As can be seen, the posterior mean washes out the small scale variability at the voxel level and the local filaments, but preserves the large scale filamentary structures, while the standard deviation field is more noisy and captures the voxel wise variability. All the plots take the sparse stellar field, shown on the left, as a conditional.
 \begin{figure*}[h!]
     \centering
     \includegraphics[width=1.0\linewidth]{chapters/Field_posterior/Fig_cube.png}
@@ -163,12 +342,11 @@ where $\overline{\mathrm{DM}}_\mathrm{pred}^i$ is the predicted posterior mean f
 
 
 \section{Discussion}
-\
 \label{sec:discussion}
 
 In this chapter, we have demonstrated that a conditional variational diffusion model, trained on the CAMELS Latin Hypercube suite, can be used to sample field-level posterior distributions of the dark matter density given an observed stellar mass field. Rather than producing a single point estimate of the underlying dark matter distribution, our approach yields a full ensemble of plausible three-dimensional realizations, from which we can extract voxel-wise posterior statistics such as the mean and standard deviation, as shown in Fig.~\ref{fig:3d_posterior}. This is one of the first demonstrations of field-level posterior sampling for the dark matter stellar connection using a variational diffusion model conditioned jointly on a local tracer field, its large-scale context, and external cosmological information.
 
-A key feature of our approach is that the astrophysical uncertainty inherent in the stellar to dark matter mapping that are only approximately captured by sub grid models is handled implicitly, by training across the full range of astrophysical parameters sampled by the CAMELS LH set. This allows the network to learn a distribution over plausible dark matter fields for a given stellar field, rather than assuming a single, fixed astrophysical model. At the same time, cosmological parameters are treated differently: rather than marginalizing over them at training time, we retain the ability to condition on them explicitly, which allows us to inject external observational constraints specifically, the Planck 2018 posterior on $\Omega_m$ and $\sigma_8$ -- directly into the sampling procedure via Bayes' theorem (Sec.~\ref{sec:field_pos_samp}). 
+A key feature of our approach is that the astrophysical uncertainty inherent in the stellar to dark matter mapping that are only approximately captured by sub grid models is handled implicitly, by training across the full range of astrophysical parameters sampled by the CAMELS LH set. This allows the network to learn a distribution over plausible dark matter fields for a given stellar field, rather than assuming a single, fixed astrophysical model. At the same time, cosmological parameters are treated differently: rather than marginalizing over them at training time, we retain the ability to condition on them explicitly, which allows us to inject external observational constraints specifically, the Planck 2018 posterior on $\Omega_m$ and $\sigma_8$ -- directly into the sampling procedure via Bayes' theorem (Sec.~\ref{sec:field_pos_samp}).
 This illustrates how a single trained generative model can be reused across different external priors without retraining.
 
 The voxel-level diagnostics presented in Sec.~\ref{sec:results} -- the single-voxel posterior distributions (Fig.~\ref{fig:voxel_hist}) and the residual histograms split by density regime (Fig.~\ref{fig:summary}) indicate that the predicted posterior mass is generally consistent with the ground truth dark matter values, in both underdense and overdense regions. We also observe, qualitatively, that the posterior mean field preserves large-scale filamentary structure while smoothing over small-scale, voxel-level variability; this is an expected consequence of averaging over a stochastic mapping in which many small-scale configurations are equally consistent with a given large-scale and stellar-field context, and is not indicative of a failure of the underlying model.

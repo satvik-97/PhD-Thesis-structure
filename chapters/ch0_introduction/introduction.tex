@@ -544,6 +544,7 @@ This loss, while simple to state, can be derived rigorously as a (simplified, re
 
 The ``evidence lower bound'' name is worth unpacking, since it is really just a statement about a specific measure of distance between two probability distributions, the \emph{Kullback,Leibler (KL) divergence},
 \begin{equation}
+\label{eq:kl_div}
     D_{\mathrm{KL}}(p\,\|\,q) = \int p(\bm{x})\,\log\frac{p(\bm{x})}{q(\bm{x})}\,\text{d}\bm{x} \ \geq 0,
 \end{equation}
 which vanishes if and only if $p=q$ everywhere, but is not symmetric in $p$ and $q$ in general. In a latent-variable model such as this one, the log-likelihood of the data can be written exactly as the ELBO plus a KL-divergence term that is always non-negative; maximizing the ELBO is therefore equivalent to maximizing a guaranteed lower bound on the true log-likelihood, with the (intractable) gap between the two set by exactly this KL divergence between the model's approximate posterior over the latents and the true one. Concretely for a diffusion model, the ELBO itself decomposes into a sum of KL divergences between the (Gaussian) forward and reverse distributions at each timestep $t$, which is what the simplified $\epsilon$-prediction loss of Eq.~\ref{eq:diffusion_loss} is, up to a $t$-dependent reweighting, actually minimizing.
