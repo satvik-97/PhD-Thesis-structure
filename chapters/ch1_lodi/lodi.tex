@@ -69,7 +69,7 @@ An overview of the full pipeline is presented in Fig.~\ref{fig:pipeline}.
 
 A U-Net, as discussed in the introduction section~\ref{sec:cnn_unet}, is a deep hierarchical convolutional neural network with encoder and decoder layers, used to perform image-to-image translation tasks an ideal architecture for our aim of predicting halo maps from $\boldsymbol{\rho}_\text{DM}$ maps.
 
-We use ResNet blocks~\citep{he_deep_2015} as the fundamental blocks for the U-Net architecture, as well as an attention layer (See sec.~\ref{sec:attention}) at the bottleneck motivated by~\citet{petit_u-net_2021}. The attention block enhances the ability of the model to capture and highlight complex structure and long-range dependencies within the data.
+We use ResNet blocks~\citep{he_deep_2015} as the fundamental blocks for the U-Net architecture, replacing the simple convolution blocks mentioned in section~\ref{sec:cnn_unet} as well as an attention layer (See sec.~\ref{sec:attention}) at the bottleneck motivated by~\citet{petit_u-net_2021}. The attention block enhances the ability of the model to capture and highlight complex structure and long-range dependencies within the data.
 \begin{figure*}
     \centering
     \includegraphics[width=0.9\linewidth]{chapters/ch1_lodi/Unet_dm_to_halo.pdf}
