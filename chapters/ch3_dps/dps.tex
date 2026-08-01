@@ -342,17 +342,14 @@ Each reverse step then combines the ordinary unconditional update of Eq.~\ref{eq
 
 \section{Results}
 \label{sec:dps_results}
-To showcase the preliminary results, we showcase the reconstruction of the baryonic and dark matter fields, after having observed only 1 set of Lyman alpha flux. We test a couple of different scenarios:
+To showcase the preliminary results, we present the reconstruction of the baryonic and dark matter fields, having observed only a single realization of the Lyman-$\alpha$ flux. We test two different scenarios:
 \begin{itemize}
-\item We vary the observed sightline sampling density.
-\item We vary the signal-to-noise ratio (SNR) of the flux observations.
+    \item We vary the observed sightline sampling density.
+    \item We vary the signal-to-noise ratio (SNR) of the flux observations.
 \end{itemize}
-Note that, as mentioned, we do not need to retrain our model to perform these various tests, since the observed flux never enters the training pipeline. Since these are incomplete results, we only show the outputs for a subvolume of the full simulation of shape $40\Mpch\times10\Mpch\times10\Mpch$.
+Note that, as mentioned, we do not need to retrain our model to perform these various tests, since the observed flux never enters the training pipeline. Since these are preliminary results, we only show the outputs for a subvolume of the full simulation of shape $40\Mpch\times10\Mpch\times10\Mpch$. For each combination, we generate 10 posterior samples of shape $(5,1024,32,32)$, matching our training data resolution and spanning a single chunk of the full simulation volume.
 
-For each combination, we generate 10 posterior samples of shape 
-$(5,1024,32,32)$, matching our training data resolution and spanning a single chunk of the full simulation volume.
-
-Our analysis proceeds in two stages. First, we perform 1D Gaussian smoothing along the line of sight only, isolating the quality of individual sightline reconstructions without transverse mixing. This reveals how well the DPS recovers velocity structure and density perturbations on individual sight lines. Second, we apply full 3D smoothing to mix information across transverse neighbors, examining whether the large-scale 3D structure and correlations are faithfully reconstructed.
+Our analysis proceeds in two stages. First, we perform 1D Gaussian smoothing along the line of sight only, isolating the quality of individual sightline reconstructions without transverse mixing. This reveals how well the DPS recovers velocity structure and density perturbations on individual sightlines. Second, we apply full 3D smoothing to mix information across transverse neighbours, examining whether the large-scale 3D structure and correlations are faithfully reconstructed.
 
 \textbf{Noise model:} We add a simple, flux-dependent noise to the synthetic observations. Rather than assuming constant noise, we adopt a spatially-varying noise model where the noise standard deviation at each pixel is inversely proportional to the local flux,
 \begin{equation}
@@ -360,9 +357,102 @@ Our analysis proceeds in two stages. First, we perform 1D Gaussian smoothing alo
 \sigma_{\text{noise}}(\mathbf{r}) = \frac{F(\mathbf{r})}{\text{SNR}},
 \end{equation}
 with a minimum floor of $\sigma_{\min} = 10^{-4}$ to avoid numerical issues in deep absorption features. This ensures that absorption troughs and high-transmission regions have comparable effective SNR, rather than a constant noise everywhere.
-\subsection{1D LOS}
-For the first test, we study the average 1D flux power spectra along with the smoothed reconstructed line of sight based on a single set of observed flux, with varying noise and sight line density. We also show the learned Pearson and Spearmann correlation coefficients for the fields.
 
+\subsection{Metrics}
+\label{sec:dps_metrics}
+Before presenting the results, we define the summary statistics used throughout this section.
+
+\textbf{1D power spectrum.} For a field $f$ defined on the LoS grid, we compute the 1D power spectrum along the line of sight, averaged over all transverse sightlines within the sub-volume,
+\begin{equation}
+P_{\rm 1D}(k) = \frac{L_{\rm LoS}}{N_{\rm LoS}^2}\left\langle \left|\widetilde{\delta f}(k)\right|^2 \right\rangle_{\perp},
+\label{eq:pk1d}
+\end{equation}
+where $\widetilde{\delta f}(k)$ is the discrete Fourier transform of the overdensity field along the LoS axis, $L_{\rm LoS} = 40\Mpch$ is the box length along the line of sight, $N_{\rm LoS}=1024$ is the number of LoS pixels, and $\langle\cdot\rangle_\perp$ denotes averaging over the transverse $(32\times32)$ sightlines. This statistic quantifies how power is distributed across scales along the line of sight, and lets us check whether the reconstruction preserves the correct clustering amplitude at each $k$. A diffusion trained prior should be able to learn the multiscale power of the fields in principle.
+
+\textbf{Pearson correlation coefficient.} To quantify how linearly related the reconstructed and ground-truth fields are, we use the Pearson correlation coefficient,
+\begin{equation}
+r_{\rm P} = \frac{\sum_i (g_i - \bar{g})(l_i - \bar{l})}{\sqrt{\sum_i (g_i - \bar{g})^2}\sqrt{\sum_i (l_i - \bar{l})^2}},
+\label{eq:pearson}
+\end{equation}
+where $g_i$ and $l_i$ are the ground-truth and latent-DPS field values at voxel $i$, and $\bar{g}$, $\bar{l}$ are their respective means. $r_{\rm P}$ ranges from $-1$ to $1$, with $r_{\rm P}=1$ indicating a perfect linear relationship. Because $r_{\rm P}$ is sensitive to the absolute scale and outliers of the field, we compute it after applying the appropriate transform for each channel (linear for $\delta_{\rm DM}$ and $v_{\rm pec}$, $\log_{10}$ for $\Delta_{\rm gas}$, $x_{\rm HI}$, and $T$, so that the statistic is not dominated by the multiplicative dynamic range of the underlying physical quantities.
+
+\textbf{Spearman correlation coefficient.} As a complementary, rank-based statistic, we also compute the Spearman correlation coefficient,
+\begin{equation}
+r_{\rm S} = 1 - \frac{6\sum_i d_i^2}{n(n^2-1)},
+\label{eq:spearman}
+\end{equation}
+where $d_i$ is the difference between the ranks of $g_i$ and $l_i$ within their respective distributions, and $n$ is the number of voxels compared. Unlike $r_{\rm P}$, $r_{\rm S}$ only requires that the reconstruction preserve the correct \emph{ordering} of field values, and is therefore more robust to monotonic but non-linear biases. For example, if 2 fields fluctuate the same way but their amplitudes are different, Pearson correlation would be smaller than the corresponding Spearman correlation coefficient. Comparing $r_{\rm P}$ and $r_{\rm S}$ side by side lets us disentangle whether a drop in correlation is due to genuine structural mismatch or simply an amplitude/normalization offset.
+
+Both coefficients are computed per posterior sample and then aggregated across the 10 samples.
+
+\subsection{1D LoS reconstruction}
+\label{sec:dps_1dlos}
+For the first test, we study the average 1D flux power spectrum along with the smoothed, reconstructed line of sight, based on a single realization of the observed flux, for varying noise level and sightline density. We also report the Pearson and Spearman correlation coefficients for each field.
+
+Figures~\ref{fig:pk1d_3cases_5} and~\ref{fig:pk1d_3cases_50} show the 1D power spectrum (Eq.~\ref{eq:pk1d}) of the reconstructed fields, averaged over all sightlines in the sub-volume (1024 in total), together with the residual ratio with respect to the ground truth, for six representative cases: SNR$=50$ and SNR$=5$, with $100\%$ sightline coverage, $25\%$ coverage, and $6.25\%$ coverage. For example: a $6.25\%$ coverage means a total of 64 observed lines, which for this test are uniformly spread across the transverse plane.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{chapters/ch3_dps/combined_pk_3cases_5_mean.png}
+    \caption{1D line of sight power spectrum (top row) and residual ratio with respect to the ground truth (bottom row), for the five reconstructed fields, averaged over all sightlines in the sub-volume, with a observed SNR$=5$. Shaded bands show the minimun - maximum range across the 10 posterior samples. Three representative cases are shown: high SNR with full coverage, high SNR with sparse coverage, and low SNR with sparse coverage.}
+    \label{fig:pk1d_3cases_5}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{chapters/ch3_dps/combined_pk_3cases_50_mean.png}
+    \caption{1D line of sight power spectrum (top row) and residual ratio with respect to the ground truth (bottom row), for the five reconstructed fields, averaged over all sightlines in the sub-volume, with a observed SNR$=50$. Shaded bands show the minimun - maximum range across the 10 posterior samples. Three representative cases are shown: high SNR with full coverage, high SNR with sparse coverage, and low SNR with sparse coverage.}
+    \label{fig:pk1d_3cases_50}
+\end{figure}
+
+A can be seen, all fields stay very close to the true power spectrum, throughout almost all scales, except the very non linear scales above $20-40\hMpci$. Since these spectra are calculated without smoothing the fields, this means that the model is at least able to reconstruct the 2 point statistics quite well.
+
+Figure~\ref{fig:los_3cases} shows a single, 1D LoS-smoothed sightline (smoothing scale $1\Mpch$, along the line of sight only, i.e.\ without transverse mixing, for the same three cases, illustrating how the individual reconstructed profiles compare against the ground truth as the sightline density and noise level are varied.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\linewidth]{chapters/ch3_dps/combined_los_1mpc_mean.png}
+    \caption{Reconstructed sightline profiles after 1D smoothing along the line of sight ($1\Mpch$ scale), for an observed sightline, for three representative cases out of the 6. The cases are mentioned at the top of the respective columns. Shaded bands show the 16th to 84th percentile range across posterior samples.}
+    \label{fig:los_3cases}
+\end{figure}
+
+As can be seen, the reconstructed field mean and the 16th to 84th percentile bands covers the true line of sight quantities quite well. However, as the observational support is reduced, for example the middle and right columns, the prediction of high density $\dmLOS$ peaks gets affected. This can be attributed to the fact that if the observation is sparse, the diffusion model tries to fill those regions with the learned prior instead of a proper reconstructed field, while also being synchronous with the observed flux around it. This causes the reconstruction of both the observed and unobserved regions to suffer. Even then, the model seems to be able to carry over information from neighboring sightlines.
+
+\subsection{3D field}
+
+Figure~\ref{fig:corr_2mpc} summarizes the reconstruction quality across all six SNR$\times$sightline-density combinations, showing the Pearson and Spearman correlation coefficients (Eqs.~\ref{eq:pearson}, \ref{eq:spearman}) evaluated on the 3D fields after $2\Mpch$ smoothing, but this time done on the full 3D field chunk, as a function of the fraction of observed sightlines.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{chapters/ch3_dps/combined_corr_2mpc_mean.png}
+    \caption{Pearson (diamonds, solid lines) and Spearman (squares, dashed lines) correlation coefficients between the reconstructed and ground-truth fields, evaluated after $2\Mpch$ 3D smoothing, as a function of the observed sightline fraction. Blue and red curves correspond to SNR$=5$ and SNR$=50$ respectively. Error bars show the $1\sigma$ spread across the 10 posterior samples.}
+    \label{fig:corr_2mpc}
+\end{figure}
+
+
+\label{sec:dps_3dslices}
+To visualize the full 3D structure of the reconstruction, Figures~\ref{fig:slices_snr50} and~\ref{fig:slices_snr5} show a longitudinal slice through the reconstructed sub-volume, for SNR$=50$ and SNR$=5$ respectively, at each of the three sightline densities tested, both without smoothing and after $2\Mpch$ 3D Gaussian smoothing. The slices are in the line of sight and one of the transverse, and shows 32 lines stacked on top of one another to reconstruct the field in that sub volume.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.55\textwidth]{chapters/ch3_dps/combined_slices_SNR50_raw_mean.png}
+    \\[1em]
+    \includegraphics[width=0.55\textwidth]{chapters/ch3_dps/combined_slices_SNR50_smooth_1mpc_mean.png}
+    \caption{Longitudinal slices through the reconstructed sub-volume for SNR$=50$, comparing the ground truth (leftmost column) against our reconstruction method at $100\%$, $25\%$, and $6.25\%$ sightline coverage. Top: unsmoothed fields. Bottom: after $2\Mpch$ 3D smoothing.}
+    \label{fig:slices_snr50}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.55\textwidth]{chapters/ch3_dps/combined_slices_SNR5_raw_mean.png}
+    \\[1em]
+    \includegraphics[width=0.55\textwidth]{chapters/ch3_dps/combined_slices_SNR5_smooth_1mpc_mean.png}
+    \caption{Same as Figure~\ref{fig:slices_snr50}, but for SNR$=5$.}
+    \label{fig:slices_snr5}
+\end{figure}
+ As can be clearly seen in both the Figures~\ref{fig:slices_snr50} and~\ref{fig:slices_snr5}, and also in the correlation plot (Figure~\ref{fig:corr_2mpc} for $100\%$ observed sight lines, the reconstruction for both the SNR cases are pretty much identical and close to the ground truth. As the observed sightline densities go down, the reconstruction becomes worse and further away from the truth. This is what is also expected since the guidance strength goes down with the number of observed lines of sight.
 \section{Discussion}
+
+
 \label{sec:dps_discussion}
 
