@@ -19,17 +19,17 @@ author's contribution to that work was the design, implementation, and
 validation of the \HGL field-level emulator described in
 Sections~\ref{sec:emu_arch}--\ref{sec:emu_train} and
 Section~\ref{sec:emu_val}, together with the generation of the underlying
-dark-matter simulations (Section~\ref{sec:emu_dmmaps}). The simulation-based
+dark matter simulations (Section~\ref{sec:emu_dmmaps}). The simulation-based
 inference (SBI) pipeline built on top of the emulator
 (Section~\ref{sec:emu_sbi}) and the resulting cosmological constraints
 (Section~\ref{sec:emu_downstream}) were developed jointly with the
 co-authors and are summarized here for context, so that this chapter reads
-as a self-contained account of the full study.}
+as a self contained account of the full study.}
 
 \section{Introduction}
 \label{sec:emu_intro}
 
-Upcoming large-scale structure (LSS) surveys will map galaxy positions and
+Upcoming large scale structure (LSS) surveys will map galaxy positions and
 neutral hydrogen (HI) intensity over volumes large enough that statistical
 noise ceases to be the limiting factor in cosmological parameter inference;
 instead, the accuracy of the forward model connecting cosmological and
@@ -54,7 +54,7 @@ that are difficult to reach with full hydrodynamical suites such as
 \CAMELS~\citep{villaescusa-navarro_camels_2022}, which sample the
 cosmological and astrophysical parameter space with only $\mathcal{O}(10^3)$
 runs. \emph{Emulators} address this bottleneck by learning the mapping from
-cheap, approximate dark-matter-only simulations (or directly from
+cheap, approximate dark matter-only simulations (or directly from
 parameters) to the corresponding baryonic observables, replacing the
 expensive hydrodynamical step with a network evaluation that costs
 milliseconds rather than CPU-hours. This is the role the emulator plays in
@@ -65,7 +65,7 @@ feasible at all.
 It is worth situating this approach relative to the rest of the thesis.
 Chapter~\ref{ch:dps} develops diffusion-based posterior sampling as a route
 to field-level inference, drawing samples from an implicit posterior over
-the dark-matter field itself. The work presented here follows a
+the dark matter field itself. The work presented here follows a
 complementary strategy: rather than sampling the DM field posterior directly,
 we use a deterministic, conditional emulator to generate tracer fields from
 DM inputs, and perform inference with normalizing-flow-based neural
@@ -77,8 +77,8 @@ expressiveness, computational cost, and the kind of posterior they target
 (a full field posterior in one case, a marginal posterior on a handful of
 cosmological parameters in the other).
 
-The proof-of-concept study summarized in this chapter combines three
-ingredients: (i) fast, approximate dark-matter simulations from \FastPM; (ii)
+The proof of concept study summarized in this chapter combines three
+ingredients: (i) fast, approximate dark matter simulations from \FastPM; (ii)
 the \HGL emulator, which paints galaxy number-count and HI brightness-temperature
 fields onto those DM maps; and (iii) an NPE pipeline that infers $\Om$ and
 $\sige$ either from the two tracers' power spectra or from a full 3D
@@ -103,7 +103,7 @@ directions.
     \centering
     % TODO(sami): export the pipeline sketch from the paper repo
     \includegraphics[width=0.85\linewidth]{chapters/ch5_emulator/emulator2.pdf}
-    \caption{High-level overview of the pipeline described in this chapter. Approximate dark-matter maps generated with \FastPM are passed through \HGL, the Attention Unet emulator, to produce galaxy and HI fields conditioned on cosmological and astrophysical parameters. These emulated fields are then either compressed to a power spectrum or fed to a convolutional encoder, and in both cases used to train a normalizing-flow-based NPE model that infers the posterior on $\Om$ and $\sige$.}
+    \caption{High-level overview of the pipeline described in this chapter. Approximate dark matter maps generated with \FastPM are passed through \HGL, the Attention Unet emulator, to produce galaxy and HI fields conditioned on cosmological and astrophysical parameters. These emulated fields are then either compressed to a power spectrum or fed to a convolutional encoder, and in both cases used to train a normalizing-flow-based NPE model that infers the posterior on $\Om$ and $\sige$.}
     \label{fig:emulator_pipeline_sketch}
 \end{figure}
 
@@ -119,10 +119,10 @@ extraction, the convolutional compression, and the normalizing flow, only
 ever sees emulator output (Section~\ref{sec:emu_sbi}). All results in this
 chapter refer to observables at $z=0$ in the plane-parallel approximation.
 
-\section{Dark-matter maps and target observables}
+\section{dark matter maps and target observables}
 \label{sec:emu_dmmaps}
 
-\paragraph{Approximate dark-matter simulations.}
+\paragraph{Approximate dark matter simulations.}
 DM-only maps are generated with \FastPM~\citep{feng_fastpm_2016}, a particle-mesh
 code that is several orders of magnitude cheaper than a full N-body run
 while still capturing the non-linear growth of structure relevant on the
@@ -160,11 +160,11 @@ Table~\ref{tab:lh_params}. Two tracers are extracted from each snapshot:
     combine the neutral hydrogen fraction $\xHI$ and gas mass to obtain the
     HI density,
     \begin{equation}
-        \rho_{\mathrm{HI},i} = m_{g,i}\, X\, \xHI_{,i}
+        \rho_{\mathrm{HI},i} = m_{g,i}\, X\, x_\mathrm{HI,i}
         \left(\frac{N_{\rm part}}{a L}\right)^{3}\ \left[\frac{\rm kg}{\rm m^3}\right],
     \end{equation}
     with $X=0.76$ the hydrogen mass fraction and $a$ the scale factor,
-    following the self-shielding prescription of
+    following the self shielding prescription of
     \citet{villaescusa-navarro_ingredients_2018}. After interpolating onto a
     $64^3$ grid with CIC, this is converted to the post-reionization
     brightness temperature,
@@ -182,7 +182,7 @@ this box size the power spectrum is noticeably sensitive to cosmic variance:
 realizations at fixed physical parameters but different random seeds can
 yield visibly different power spectra, which introduces a degeneracy
 between cosmology and realization noise. We therefore adopt $50\Mpch$ boxes
-for the SBI stage to improve large-scale mode sampling, while still training
+for the SBI stage to improve large scale mode sampling, while still training
 the emulator itself at $25\Mpch$, since the LH suite is not available at the
 larger box size (the available alternative, the SB35 suite, varies 30
 astrophysical parameters simultaneously instead of 4, making it unsuitable
@@ -228,9 +228,9 @@ upsampling with trilinear interpolation. Skip connections concatenate
 encoder features into the corresponding decoder stage at matching
 resolution, which is what allows the network to recover high-frequency
 structure that would otherwise be lost during downsampling. At the
-bottleneck, a self-attention layer lets the network model long-range,
+bottleneck, a self attention layer lets the network model long-range,
 non-local correlations between voxels, which is particularly relevant for
-capturing large-scale structure that a purely convolutional receptive field
+capturing large scale structure that a purely convolutional receptive field
 would only see indirectly through depth.
 
 \begin{table}[t]
@@ -250,7 +250,7 @@ would only see indirectly through depth.
                   & $(L/4)^3$ & $16 \to 32$ ($g{=}4$)     & ResNet block + MaxPool \\
                   & $(L/8)^3$ & $32 \to 64$ ($g{=}4$)     & ResNet block + MaxPool \\
                   & $(L/8)^3$ & $64 \to 128$ ($g{=}4$)    & ResNet block \\
-        Bottleneck& $(L/8)^3$ & $128 \to 128$ ($g{=}4$)   & self-attention \\
+        Bottleneck& $(L/8)^3$ & $128 \to 128$ ($g{=}4$)   & self attention \\
         Decoder   & $(L/4)^3$ & $128 \to 64$ ($g{=}4$)    & upsample + ResNet block \\
                   & $(L/2)^3$ & $64 \to 32$ ($g{=}4$)     & upsample + ResNet block \\
                   & $L^3$     & $32 \to 16$ ($g{=}4$)     & upsample + ResNet block \\
@@ -340,8 +340,8 @@ residual on held-out validation maps. For the HI emulator these two
 criteria pick the same checkpoint; for the galaxy emulator they do not,
 which is itself informative, it means the epoch at which the network best
 reproduces individual voxel values is not necessarily the epoch at which it
-best reproduces the two-point statistics of the field, and the two should be
-tracked and reported separately rather than assuming pixel-level accuracy
+best reproduces the two point statistics of the field, and the two should be
+tracked and reported separately rather than assuming pixel level accuracy
 implies summary-statistic accuracy (or vice versa). Once trained, generating
 a single $64^3$ map takes $\sim 10^{-2}\,$s on an NVIDIA A100 GPU, several
 orders of magnitude faster than the hydrodynamical simulation it replaces.
@@ -387,7 +387,7 @@ itself set by the \HGL emulator described above.
 Figure~\ref{fig:emulator_validation_25_gal} shows emulator performance at
 $25\Mpch$, the box size it was trained on, for the galaxy tracers:
 power-spectrum residuals stay below $\sim 25\%$ across the scales probed,
-with well-centered averages, and the voxel-value histograms of emulated and
+with well-centered averages, and the voxel value histograms of emulated and
 true maps agree closely.
 
 \begin{figure}[h!]
@@ -419,7 +419,7 @@ both tracers.
 Figure~\ref{fig:emulator_validation_50_gal} shows the same test applied to
 $50\Mpch$ maps for the galaxy tracers, generated by the same
 $25\Mpch$-trained network (the box-size argument in
-Section~\ref{sec:emu_dmmaps}). The pixel-value histograms remain well
+Section~\ref{sec:emu_dmmaps}). The pixel value histograms remain well
 calibrated, but the power spectrum is visibly less accurately reproduced
 than at $25\Mpch$.
 
@@ -436,7 +436,7 @@ than at $25\Mpch$.
 
 Figure~\ref{fig:emulator_validation_50_hi} shows the corresponding
 degradation for the HI tracers, similar for the galaxy case. The most likely explanation for both these $50\Mpch$ cube is that larger
-boxes contain larger-scale modes, and correspondingly more massive halos,
+boxes contain larger scale modes, and correspondingly more massive halos,
 than the network ever saw during training on smaller boxes; the emulator is
 being asked to extrapolate into a regime it was never exposed to, not
 merely to interpolate within its training distribution. We adopt this
@@ -553,7 +553,7 @@ astrophysics.
 
 It is worth spelling out why these particular gains appear, since the
 pattern is not simply ``more information is always better.'' The power
-spectrum is, by construction, a two-point statistic: it is blind to any
+spectrum is, by construction, a two point statistic: it is blind to any
 information encoded in higher-order correlations of the field. Non-linear
 gravitational evolution generates exactly this kind of higher-order,
 non-Gaussian structure, and it is particularly sensitive to $\sige$, which
@@ -582,24 +582,24 @@ direct dependence on the underlying density.
     \label{fig:posteriors_downstream_fixedastro_multi}
 \end{figure}
 
-Combining the two through their cross-correlation lets the inference
-disentangle genuine cosmological signal from tracer-specific effects (shot
+Combining the two through their cross correlation lets the inference
+disentangle genuine cosmological signal from tracer specific effects (shot
 noise, bias) that do not correlate between the two tracers, which is
 precisely why $\mathcal{P}^{\rm g\times HI}$ and 3D$\mathcal{M}^{\rm g\times
-HI}$ outperform either single-tracer case on its own. None of this should
+HI}$ outperform either single tracer case on its own. None of this should
 be read as a criticism of galaxy clustering as an observational probe in
 general: real galaxy surveys additionally exploit physically motivated bias
-models, much larger survey volumes, and observables such as redshift-space
-distortions that are absent from this idealized, box-limited comparison.
+models, much larger survey volumes, and observables such as redshift space
+distortions that are absent from this idealized, box limited comparison.
 
 \FloatBarrier
 
 From the perspective of this chapter, the relevant point is narrower: none
 of these downstream comparisons would be meaningful if the emulated fields
-feeding them were not themselves accurate, at both the pixel and summary-statistic
+feeding them were not themselves accurate, at both the pixel and summary statistic
 level. This is precisely
 what Section~\ref{sec:emu_val} was intended to establish, that the \HGL
-emulator reproduces both the power spectrum and the pixel-level statistics
+emulator reproduces both the power spectrum and the pixel level statistics
 of the tracers it was trained on to good accuracy at $25\Mpch$, with
 box-size extrapolation to $50\Mpch$ identified as the dominant residual
 source of emulator-level systematic error. The downstream SBI comparison
@@ -622,32 +622,32 @@ First, and most importantly, generalization across box size is limited:
 the emulator trained at $25\Mpch$ shows a visibly larger power-spectrum
 residual when used to generate $50\Mpch$ maps
 (Section~\ref{sec:emu_val}), most likely because the larger box exposes
-large-scale modes and massive halos absent from the smaller training
+large scale modes and massive halos absent from the smaller training
 volumes. Because the current \CAMELS LH suite provides paired DM/hydro
 simulations only at $25\Mpch$, this cannot be fully resolved without new
 training data at larger box size; a supervised fine-tuning step, or a
-loss term that explicitly penalizes large-scale power-spectrum residuals,
+loss term that explicitly penalizes large scale power-spectrum residuals,
 would both be natural directions to explore in the meantime.
 
 Second, the checkpoint selection issue noted in Section~\ref{sec:emu_train},
-that the best pixel-level checkpoint and the best power-spectrum checkpoint
-do not coincide for the galaxy emulator, is a reminder that voxel-wise loss
-and two-point-function accuracy are not interchangeable diagnostics for a
+that the best pixel level checkpoint and the best power-spectrum checkpoint
+do not coincide for the galaxy emulator, is a reminder that voxel wise loss
+and two point function accuracy are not interchangeable diagnostics for a
 field-level emulator, and that whichever one is optimized for should be
 chosen deliberately based on the downstream use case (map realism vs.\
 summary-statistic accuracy) rather than by default.
 
 Third, the entire pipeline, training, validation, and the SBI test set
-alike, is self-consistent: everything is generated within the same emulator
+alike, is self consistent: everything is generated within the same emulator
 framework, and no attempt is made here to test transfer to independently
 generated maps (e.g.\ original \CAMELS hydrodynamical maps not used in
 training, or maps from a different simulation suite altogether). Prior work
-on out-of-distribution sensitivity in field-level SBI has shown that even
+on out of distribution sensitivity in field-level SBI has shown that even
 small numerical differences between simulation codes at fixed physical
 parameters can bias inferred posteriors~\citep{Bayer_2025}; since an
 emulator is, by construction, another source of such small-scale
 discrepancies relative to the simulations it approximates, a dedicated
-out-of-distribution study is a necessary step before this pipeline could be
+out of distribution study is a necessary step before this pipeline could be
 applied to real observational data, or even to hydrodynamical simulations
 outside the training suite.
 
