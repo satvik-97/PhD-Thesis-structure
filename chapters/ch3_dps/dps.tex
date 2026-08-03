@@ -2,35 +2,16 @@
 \chapter{Diffusion Posterior Sampling for Cosmological Field Reconstruction}
 \label{ch:dps}
 
-\noindent
-\textit{This chapter is a work in progress. The Introduction, Data
-Preparation (Section~\ref{sec:lya-data-prep}), and Optical Depth Theory
-(Section~\ref{sec:lya-theory}) sections reflect the current, fairly
-mature state of this analysis, including a forward model. The Diffusion Posterior Sampling
-methodology (Section~\ref{sec:dps_theory}) has been worked out
-theoretically in this pass, with equations, but its chapter-specific
-implementation details , the structural-consistency term, the exact
-memory-saving scheme, and the training hyperparameters of the
-Variational Diffusion Prior (Section~\ref{sec:dps_architecture}) , are
-still being finalized and are marked as placeholders below rather than
-presented as settled. No posterior reconstructions have been generated
-yet: Results (Section~\ref{sec:dps_results}) is a placeholder describing
-what it will contain once available, and the first results shown there
-will be for a single simulation sub-volume (a ``chunk''), not the full
-box.}
+\textit{This chapter presents diffusion posterior sampling (DPS) applied to Lyman-$\alpha$ tomography. The data preparation (Section~\ref{sec:lya-data-prep}),
+  the differentiable Voigt-profile forward model (Section~\ref{sec:lya-theory}), the variational diffusion prior's architecture and training
+  (Section~\ref{sec:dps_architecture}), and the diffusion posterior sampling formalism itself (Section~\ref{sec:dps_theory}) are presented in full. The
+  reconstructions shown in Section~\ref{sec:dps_results} are preliminary in the specific sense discussed in Section~\ref{sec:dps_disc_limits}: for the time being they are tested on a part of the full test simulation. They cover a single
+  $40\times10\times10\,(\Mpch)^3$ sub-volume of the full simulation box rather than the complete box ($40^3 (\Mpch)^3$, with the full-box extension set out as future work in Section~\ref{sec:dps_disc_future}.}
 
 \section{Introduction}
 \label{sec:dps_intro}
 
-% CITATION STATUS , keys used below NOT YET in the .bib (verified
-% 2026-07-29, see bibliography/citations_needed.md for full details):
-% gunn_peterson_1965, lynds_1971, rauch_1998, pichon_2001, caucci_2008,
-% lee_2014, lee_2018, miralda-escude_1996, schaye_2000, viel_2002,
-% bolton2017, horowitz2019, horowitz2021, kingma_welling_2013,
-% villaescusa-navarro_2021, lanusse_2021, horowitz2022, legin_2023,
-% remy_2023. Already-confirmed-present keys used below: Meiksin_2009,
-% McQuinn_2016, Bi_1997, feng_fastpm_2016, chung_diffusion_2023,
-% ono_debiasing_2024, Maitra_2026.
+
 
 The intergalactic medium (IGM) at high redshift holds the majority of the Universe's baryonic content, and on megaparsec scales its distribution traces the underlying dark matter field shaped by gravitational instability~\citep{Meiksin_2009,McQuinn_2016,Bi_1997}. The Lyman-$\alpha$ (Ly$\alpha$) forest , the pattern of absorption imprinted by intervening neutral hydrogen on the spectra of background quasars and galaxies , remains the most direct observational window onto this diffuse structure~\citep{Gunn_peterson,Lynds_1971,Williger_2000}. For over two decades, sufficiently dense grids of background sightlines have made it possible to move beyond one dimensional flux statistics and reconstruct the IGM tomographically in three dimensions~\citep{caucci2008recoveringtopologyigmz2,Lee_2014,Lee_2018}, a program now being extended by surveys such as DESI Ly$\alpha$ QSO, WEAVE-QSO, and Subaru-PFS/CLAMATO/LATIS, and, in the coming decade, by ELT/MOSAIC, which will push sightline separations down toward $1\Mpch$. At these finer separations, the reconstruction problem becomes increasingly sensitive to the baryonic physics , pressure smoothing, thermal broadening, and radiative feedback , that decouples the IGM from the pure dark matter field below $\sim 1\,\mathrm{Mpc}$~\citep{schaye_2000,Viel_2002,nasir2017effect}, motivating reconstruction methods that can go beyond the linear, large-scale regime.
 

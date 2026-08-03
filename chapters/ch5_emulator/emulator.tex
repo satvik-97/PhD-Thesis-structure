@@ -101,7 +101,6 @@ directions.
 
 \begin{figure}[t]
     \centering
-    % TODO(sami): export the pipeline sketch from the paper repo
     \includegraphics[width=0.85\linewidth]{chapters/ch5_emulator/emulator2.pdf}
     \caption{High-level overview of the pipeline described in this chapter. Approximate dark matter maps generated with \FastPM are passed through \HGL, the Attention Unet emulator, to produce galaxy and HI fields conditioned on cosmological and astrophysical parameters. These emulated fields are then either compressed to a power spectrum or fed to a convolutional encoder, and in both cases used to train a normalizing-flow-based NPE model that infers the posterior on $\Om$ and $\sige$.}
     \label{fig:emulator_pipeline_sketch}
@@ -195,7 +194,6 @@ the same voxel resolution. This of course is also the main limitation of the cur
 
 \begin{figure}[t]
     \centering
-    % TODO(sami): export the architecture schematic from the paper repo
     \includegraphics[width=0.9\linewidth]{chapters/ch5_emulator/pictures/emulator_architecture.pdf}
     \caption{Schematic of the \HGL emulator. A DM map generated with
     \FastPM is passed through a conditional 3D U-Net to produce a galaxy or
