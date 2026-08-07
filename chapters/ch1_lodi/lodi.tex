@@ -1,16 +1,15 @@
 \chapter{LODI: Large, Fast and Accurate Neutral Hydrogen Intensity Maps with Latent Overlap Diffusion}
 \label{ch:lodi}
+The Introduction already laid out why we need fast surrogates to replace full simulations and map directly from input to output/observed fields (Section~\ref{sec:sim_bottleneck}).
+The same goes for 21\,cm intensity mapping: we reviewed the three established ways of connecting the HI signal to the underlying matter distribution, namely halo models, perturbation theory, and hydrodynamical simulations, and the existing machine learning alternatives to them, in Section~\ref{sec:ml_field_level} and Section~\ref{sec:modeling_hi}.
+\LODI\ closes that gap with a method that learns the HI to dark matter connection directly from simulations, physically motivated, with the fidelity of a diffusion model, while remaining fast and cheap enough to generate large volumes.
 
-The Introduction already laid out why we need fast surrogates to replace full simulations and map directly from input to output/observed fields (Section~\ref{sec:sim_bottleneck}). The same goes for 21\,cm intensity mapping. We reviewed the three established ways of connecting the HI signal to the underlying matter distribution, namely the halo
-models, perturbation theory, and hydrodynamical simulations themselves
-(Section~\ref{sec:21cm_im}). Existing machine learning alternatives to these
-three, reviewed in Section~\ref{sec:ml_field_level}, have so far relied on
-normalizing flows or generative adversarial networks. The current state of the art, diffusion models,
-despite being used for high-fidelity generative
-modeling (Section~\ref{sec:diffusion_intro}), have seen essentially no application to 21\,cm intensity mapping, for example~\citep{ono_debiasing_2024}.
-This leaves a gap. A method that learns the HI to dark matter
-connection directly from simulations, while being physically motivated, with the fidelity of a diffusion
-model, while remaining fast and cheap enough to generate the large volumes, does not exist, at least at the time this work was presented.
+
+
+
+
+
+
 
 \section{LODI pipeline}
 
@@ -31,7 +30,7 @@ approach to 21\,cm intensity mapping.
 \section{Data and simulations}
 \label{sec:dataset_camels}
 For this work, we use the CAMELS suite of cosmological
-simulations~\citep{villaescusa-navarro_camels_2022}, specifically the IllustrisTNG ones, which are created by varying cosmological parameters ($\Omega_m$ and $\sigma_8$) and astrophysical parameters (supernova and AGN feedback) across different realizations. Specifically, $A_{\mathrm{SN1}}$ and $A_{\mathrm{SN2}}$ are normalization factors for the energy and speed of galactic wind feedback, respectively; $A_{\mathrm{AGN1}}$ and $A_{\mathrm{AGN2}}$ control the energy output and of AGN feedback. These factors are with respect to the ones that are used in the big \TNG runs, and so a value set to 1 for these astrophysics parameters means that they have the same magnitude as the \TNG counterpart. These simulations are run using the moving-mesh hydrodynamics code AREPO~\citep{weinberger_arepo_2020}, which combines a TreePM gravity solver with a finite-volume Godunov scheme on an unstructured Voronoi mesh. Stellar feedback follows the IllustrisTNG prescriptions, and particles are evolved from $z=127$.
+simulations~\citep{villaescusa-navarro_camels_2022}, specifically the IllustrisTNG ones, which are created by varying cosmological parameters ($\Omega_m$ and $\sigma_8$) and astrophysical parameters (supernova and AGN feedback) across different realizations. Specifically, $A_{\mathrm{SN1}}$ and $A_{\mathrm{SN2}}$ are normalization factors for the energy and speed of galactic wind feedback, respectively; $A_{\mathrm{AGN1}}$ and $A_{\mathrm{AGN2}}$ control the energy output and of AGN feedback. These factors are with respect to the ones that are used in the big \TNG runs, and so a value set to 1 for these astrophysics parameters means that they have the same magnitude as the \TNG counterpart. These simulations are run using the moving-mesh hydrodynamics code AREPO~\citep{weinberger_arepo_2020}. Stellar feedback follows the IllustrisTNG prescriptions, and particles are evolved from $z=127$.
 
 For our work, we train on the Cosmic Variance (CV) set of IllustrisTNG
 realizations, comprising 27 simulations with identical cosmology and

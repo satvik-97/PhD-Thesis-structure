@@ -15,16 +15,15 @@ Recovering the underlying dark matter distribution from these biased tracers
 is therefore an inverse problem: for a given observed stellar or galaxy field, many plausible dark matter configurations are consistent with the data, and the astrophysical parameters governing the tracer to matter connection are themselves unknown. A principled solution requires sampling from a full posterior distribution over dark matter field configurations, rather than producing a single point estimate.
 
 \paragraph{Field-level inference in cosmology.}
-Traditional cosmological inference compresses the 3D density field into low-order summary statistics such as the power spectrum or bispectrum before comparing to theoretical predictions. While tractable, this compression
-discards a substantial fraction of the cosmological information encoded in the non-Gaussian, non-linear regime of structure formation~\citep{leclercq_accuracy_2021,jasche_bayesian_2013}. \emph{Field-level inference} instead aims to extract information directly at the level of the 3D field
+As discussed in Chapter~\ref{ch:introduction} (Section~\ref{sec:lss_param_inference}), compressing the 3D density field into low order summary statistics discards a substantial fraction of the cosmological information encoded in the non Gaussian, non-linear regime of structure formation~\citep{leclercq_accuracy_2021,jasche_bayesian_2013}.
+ \emph{Field-level inference} instead aims to extract information directly at the level of the 3D field
 itself. Early approaches to this problem relied on explicit forward models of gravitational dynamics coupled with Hamiltonian Monte Carlo or related samplers to explore the resulting high-dimensional posterior~\citep{jasche_bayesian_2013}, with more recent extensions targeting efficient sampling at scale~\citep{bayer_field-level_2023}, robustness to model misspecification~\citep{shao_robust_2022}, and joint constraints on primordial non-Gaussianity~\citep{andrews_bayesian_2023}. These methods are powerful but computationally demanding, as each posterior draw typically requires an expensive forward simulation or gradient evaluation through a differentiable simulator.
 
 
-\paragraph{Learned priors and generative field-level inference.}
-An alternative route is to learn a prior or a full conditional
-posterior directly from a suite of simulations using deep generative models, avoiding the need to evaluate a physical forward model at inference time. Early machine learning approaches to the dark matter galaxy connection used neural networks to learn point estimates of this
+\paragraph{Generative field-level inference.}
+Early machine learning approaches to the dark matter galaxy connection used neural networks to learn point estimates of this
 mapping~\citep{modi_cosmological_2018}. More recently, diffusion based generative models have been used to go beyond point estimates and directly sample the posterior distribution of dark matter fields conditioned on biased tracers. Closely related to the present work, \citet{ono_debiasing_2024} trained a diffusion model on the CAMELS suite to sample dark matter density fields conditioned on stellar mass fields, explicitly marginalizing over the uncertain cosmological and astrophysical parameters of the simulation suite. Diffusion priors have also been
-successfully deployed as posterior samplers for weak-lensing mass mapping in three dimensions~\citep{zhao_generative_2026}, following the general framework of diffusion posterior sampling for inverse problems~\citep{chung_diffusion_2023} that we present in this thesis (Chapter~\ref{ch:dps}).
+successfully deployed as posterior samplers for weak-lensing mass mapping in three dimensions~\citep{zhao_generative_2026}. Our thesis also follows up on the the general framework of diffusion posterior sampling for inverse problems~\citep{chung_diffusion_2023} that we present in Chapter~\ref{ch:dps}.
 
 
 \paragraph{This work.}
