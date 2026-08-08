@@ -3,9 +3,9 @@
 \label{ch:dps}
 
 \textit{This chapter presents diffusion posterior sampling (DPS) applied to Lyman-$\alpha$ tomography. The data preparation (Section~\ref{sec:lya-data-prep}),
-  the differentiable Voigt-profile forward model (Section~\ref{sec:lya-theory}), the latent variational diffusion prior's architecture and training
-  (Section~\ref{sec:dps_architecture}), and the diffusion posterior sampling formalism itself (Section~\ref{sec:dps_theory}) are presented in addition to Section~\ref{sec:dps_formulation}. The
-  reconstructions shown in Section~\ref{sec:dps_results} are preliminary in the specific sense discussed in Section~\ref{sec:dps_disc_limits}: for the time being they are tested on a part of the full test simulation. that covers a single
+  the differentiable Voigt-profile forward model (Section~\ref{sec:lya-theory}), the latent variational diffusion prior's architecture, training
+  (Section~\ref{sec:dps_architecture}), and the diffusion posterior sampling formalism itself (Section~\ref{sec:dps_theory}) are presented in Section~\ref{sec:dps_formulation}. The
+  reconstructions shown in Section~\ref{sec:dps_results} are preliminary in the specific sense discussed in Section~\ref{sec:dps_disc_limits}: for the time being they are tested on a part of the full test simulation. that covers a 
   $40\times10\times10\,(\Mpch)^3$ sub-volume of the full simulation box rather than the complete box $40^3 (\Mpch)^3$, with the full-box extension set out as next future work in Section~\ref{sec:dps_disc_future}.}
 
 \section{Introduction}
@@ -252,7 +252,7 @@ Modeling the observational noise on the flux as Gaussian with variance $\sigma_y
 p\!\big(\bm{y}\mid\hat{\bm{x}}_0(\bm{z}_t)\big) \;\propto\; \exp\!\left(-\frac{1}{2\sigma_y^2}\left\lVert\bm{y}-\mathcal{A}\!\big(\hat{\bm{x}}_0(\bm{z}_t)\big)\right\rVert^2\right),
 \label{eq:dps_gaussian_likelihood}
 \end{equation}
-where $\mathcal{A}(\cdot)$ denotes the full forward operator of Section~\ref{sec:lya-theory}: extracting the four gas-phase channels $(\gasLOS,\HILOS,T,\vpec)$ from the joint field estimate (recall that $\dmLOS$ never enters $\mathcal{A}$ directly; Section~\ref{sec:lya-physics}), evaluating the discretised optical depth of Eq.~\ref{eq:tau-sum}, and converting to transmitted flux via $F=e^{-\tau}$.
+where $\mathcal{A}(\cdot)$ denotes the full forward operator of Section~\ref{sec:lya-theory}: extracting the four gas-phase channels $(\gasLOS,\HILOS,T,\vpec)$ from the joint field estimate (recall that $\dmLOS$ never enters $\mathcal{A}$ directly; Section~\ref{sec:lya-physics}), evaluating the discretised optical depth of Eq.~\ref{eq:tau-sum}, and converting to transmitted flux via $F=e^{-\tau}$. We note that for this work, although for now we have used a Gaussian Likelihood with a fixed noise scale, this will be improved as this fixed noise prescription affects the reconstruction of highly absorbing regions, which are regions of higher density. More explanation in the discussion.
 
 \subsection{The guidance gradient and sampling algorithm}
 \label{sec:dps_algorithm}
@@ -369,7 +369,7 @@ Figure~\ref{fig:los_3cases} shows a single, 1D LoS-smoothed sightline (smoothing
     \label{fig:los_3cases}
 \end{figure}
 
-As can be seen, the reconstructed field mean and the 16th to 84th percentile bands covers the true line of sight quantities quite well. However, as the observational support is reduced, for example the middle and right columns, the prediction of high density $\dmLOS$ peaks gets affected. This can be attributed to the fact that if the observation is sparse, the diffusion model tries to fill those regions with the learned prior instead of a proper reconstructed field, while also being synchronous with the observed flux around it. This causes the reconstruction of both the observed and unobserved regions to suffer. Even then, the model seems to be able to carry over information from neighboring sightlines.
+Visually, the reconstructed field mean and the 16th to 84th percentile bands covers the true line of sight quantities quite well. However, as the observational support is reduced, for example the middle and right columns, the prediction of high density $\dmLOS$ peaks gets affected. This can be attributed to the fact that if the observation is sparse, the diffusion model tries to fill those regions with the learned prior instead of a proper reconstructed field, while also being synchronous with the observed flux around it. Another reason is an inefficient choice of Likelihood. We use a constant noise level, which corresponds to a very high SNR for low $F$. These low $F$ correspond to high dense region, and so the model gets confused especially in those dense regions. Note that the flux values here don't seem to reach close to $0$. This is purely a smoothing artifact. In the native resolution, they do indeed.
 
 \subsection{3D field}
 
@@ -427,6 +427,8 @@ It is worth stating again that of the five reconstructed fields, $\dmLOS$ is the
 
 The results presented here are, as stated at the top of the chapter, preliminary in three specific, related ways that motivate the future work below. First, they cover a single $40\times10\times10\,(\Mpch)^3$ sub-volume, one $1024\times32\times32$ training-resolution chunk, which is $1/16$ of the total volume of the simulation, rather than the full $40\times40\times40\,(\Mpch)^3$ simulation box. Second, the sightline density sweep of Section~\ref{sec:dps_results} tests robustness to \emph{missing} observations by masking sightlines out of the same dense, fixed $32\times32$ training grid, not robustness to a genuinely different \emph{native} sightline geometry of the kind a sparser real survey would deliver. Third, both the VAE (Section~\ref{sec:VAE_training}) and the latent diffusion prior (Section~\ref{sec:latent_vdm}) are trained on the same 5,000 chunks drawn from only 8 independent simulations, differing only in initial-condition seed rather than in astrophysics or cosmology. This however, is not a major issue since for testing we do use an unseen simulation, so any biases generated during training would be visible at test time. In particular, none of these limitations is expected to undermine the dark matter recovery result of Section~\ref{sec:dps_disc_dm}: that result rests on correlations the prior learned between dark matter and the gas-phase fields, which more independent training simulations should reinforce rather than weaken, so the qualitative finding are robust even though the quoted fidelity numbers are not yet final.
 
+\subsection{Likelihood}
+For this work, as explained before, we use a simple Gaussian Likelihood term with a global noise level $\sigma$. This seems fine as a first step but has a few glaring problems associated with it. First of all, this is incompatible with the way noise is added at the observation level, which depends on the $F$ values. So regions with less absorption or $F\approx1$ have a high value of absolute noise and dense regions with $F\approx0$ have low values. But our global likelihood noise associates same noise to all the $F$ values. This results in low absorption regions to have a high confidence for the model but for small $F$ values, the model is under confident, hence under or sometimes over predicting those values. This, combined with the fact that there are few high density peaks in the training, the model suffers from predicting high density regions.
 
 \subsection{Future work}
 \label{sec:dps_disc_future}

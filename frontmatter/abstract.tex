@@ -5,9 +5,9 @@
 \chapter*{Abstract}
 \addcontentsline{toc}{chapter}{Abstract}
 \noindent
-% TODO: write full abstract
+
 The distribution of neutral hydrogen and its connection to the underlying
-dark matter field is a powerful cosmological probe. Predicting observable
+dark matter field is a powerful cosmological proben to study the large scale structure and cosmic evolution. Predicting observable
 signals, however, is hindered by the large computational cost of
 hydrodynamical simulations. This thesis develops a suite of machine
 learning methods, based on generative diffusion models to replace
@@ -20,15 +20,14 @@ simulations, recovering the power spectrum to within 10\% for
 $k \leq 10\hMpci$.
 
 We then present \FOLD, which extends this approach to generate
-arbitrarily large 3D cosmological fields by tiling overlapping latent
-patches, enabling generalization from $25^3\Mpch$ training volumes to
-\TNG300-scale fields while preserving large-scale structure.
+arbitrarily large 3D cosmological fields via a novel sliding window technique, enabling generalization from $25^3\Mpch$ training volumes to
+\TNG300-scale fields while preserving large-scale structure and improving high order correlations beyond the 2 point correlations.
 We also apply the same \FOLD technique to generate field level posteriors, while being constrained by Planck priors.   
 
 Next, we implement Diffusion Posterior Sampling (DPS) for
-field-level line of sight reconstruction of the full physical state of the intergalactic medium from Lyman-$\alpha$ forest sightlines using a differentiable Voigt profile forward model.
+field level line of sight reconstruction of the full physical state of the intergalactic medium from Lyman-$\alpha$ forest sightlines using a differentiable Voigt profile forward model.
 
 Finally, we develop a fast neural emulator mapping dark matter fields to HI
 and galaxy fields, conditioned on six astrophysical and cosmological
 parameters, and embed it within a simulation-based inference pipeline to
-constrain $\Om$ and $\sige$ from field-level summaries, while quantifying the impact of field level multi-field inference.
+constrain $\Om$ and $\sige$ from field-level summaries, while quantifying the impact of field level multi field inference.
